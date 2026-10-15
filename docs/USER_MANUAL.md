@@ -6,6 +6,8 @@ Start the backend (see the README) and open http://127.0.0.1:8100. The sidebar s
 backend is connected, an **Add charger** button, and one entry per charger with its state and a summary
 (for example "1 charging · 2 EVSE").
 
+If the server was started with `SIM_TOKEN`, you first see an **Access token** screen; enter the token to unlock. The session lasts 7 days in this browser, and you are asked again if it expires.
+
 ## 2. Adding a charger
 
 Click **Add charger**.

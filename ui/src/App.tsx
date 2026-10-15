@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import AddStation from './components/AddStation'
 import Console, { STATE_TONE } from './components/Console'
+import Login from './components/Login'
 import { ToastProvider } from './components/Toast'
+import { api } from './api'
 import { useSim } from './useSim'
 
 function Shell() {
@@ -53,6 +55,20 @@ function Shell() {
   )
 }
 
+/** Shows the login only when the server was started with SIM_TOKEN; otherwise straight to the simulator. */
+function Gate() {
+  const [state, setState] = useState<'checking' | 'login' | 'ok'>('checking')
+  const check = () => api<{ required: boolean; authenticated: boolean }>('/api/auth').then((a) => setState(!a.required || a.authenticated ? 'ok' : 'login')).catch(() => setState('ok'))
+  useEffect(() => {
+    void check()
+    const expired = () => setState('login')
+    window.addEventListener('sim-unauthorized', expired)
+    return () => window.removeEventListener('sim-unauthorized', expired)
+  }, [])
+  if (state === 'checking') return null
+  return state === 'login' ? <Login onLoggedIn={() => setState('ok')} /> : <Shell />
+}
+
 export default function App() {
-  return <ToastProvider><Shell /></ToastProvider>
+  return <ToastProvider><Gate /></ToastProvider>
 }

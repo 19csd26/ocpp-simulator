@@ -23,7 +23,8 @@ Single process, single event loop, in-memory state. No database.
 | Module | Responsibility |
 |---|---|
 | `main.py` | `create_app()`: REST routes, `/ws`, serves `ui/dist`, localhost-only CORS. Deleting a station sets `removed`, calls `hub.forget`, publishes `removed`. |
-| `__main__.py` | `python -m ocpp_simulator --port N` |
+| `__main__.py` | `python -m ocpp_simulator --port N`; refuses a non-local `--host` without `SIM_TOKEN` (unless `--insecure`) |
+| `auth.py` | Optional shared-token auth (`SIM_TOKEN`): `POST /api/login` sets an HttpOnly, SameSite=Strict cookie holding a digest (never the token); `Authorization: Bearer` also works. All `/api/*` and `/ws` need it except `/api/auth`, `/api/login`, `/api/logout`. Login failures are limited to 10 per 5 minutes. |
 | `config.py` | `StationConfig`, `EvseSpec`, `ConnectorSpec`, hardware `PRESETS`, `EV_MODELS`, connector types |
 | `station.py` | `Station`: connection loop (backoff, `network_up`, wake event), boot, heartbeat loop (interval re-read every second), `request`/`send_raw`/`_call`, offline queue (`deliver_tx`, `flush_queue`), `snapshot()`. Contains `_Conn`, the socket adapter that logs frames and applies outgoing rules and latency/packet-loss faults. |
 | `link.py` | `Link(ChargePoint)`: one per connection. Builds a handler for each of the 40 CSMS commands (`COMMAND_NAMES`) that calls `Station.run_command`. Applies incoming rules in `route_message`. |
@@ -106,6 +107,6 @@ port) and `make_station` fixture. Asyncio mode is `auto`.
 ## Limits and decisions
 
 - In-memory only: restart loses stations. Deliberate (no database, per requirements).
-- No authentication on the API; localhost only.
+- Authentication is one optional shared token (`SIM_TOKEN`), not accounts. Without it the API is open and the server only binds to localhost. TLS is left to the tunnel or proxy in front.
 - Fault-event component names are best effort and unverified against OCTT.
 - ISO 15118 messages are present and schema-valid but there is no real EV/PKI exchange.

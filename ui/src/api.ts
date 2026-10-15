@@ -18,6 +18,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
     headers: { 'Content-Type': 'application/json' },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   })
+  if (res.status === 401 && !path.startsWith('/api/login')) window.dispatchEvent(new Event('sim-unauthorized'))  // session expired: show the login again
   if (res.status === 204) return undefined as T
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new ApiError(res.status, readable((data as { detail?: unknown }).detail, `Request failed (${res.status})`))

@@ -61,8 +61,9 @@ export function useSim(): SimState & { refresh: () => Promise<void>; clearLog: (
       const proto = location.protocol === 'https:' ? 'wss' : 'ws'
       socket = new WebSocket(`${proto}://${location.host}/ws`)
       socket.onopen = () => setConnected(true)
-      socket.onclose = () => {
+      socket.onclose = (e) => {
         setConnected(false)
+        if (e.code === 4401) { window.dispatchEvent(new Event('sim-unauthorized')); return }  // not logged in: stop retrying
         if (!closed) retry = setTimeout(open, 1500)
       }
       socket.onmessage = (m) => {

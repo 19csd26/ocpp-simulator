@@ -30,6 +30,47 @@ Development with live reload: run the backend on 8100, then `npm run dev` in `ui
 
 No CSMS handy? Run the bundled permissive one: `.venv/bin/python -m ocpp_simulator.mock_csms --help`.
 
+## Share it (tunnel) or run it in Docker
+
+The API can be protected with a shared token. Set `SIM_TOKEN` and the UI shows a login screen first; scripts can send
+`Authorization: Bearer <token>`. Without `SIM_TOKEN` the server only starts on localhost and refuses to listen on a network address.
+
+**Free tunnel (recommended).** The simulator keeps running on your machine, so a CSMS on `localhost` stays reachable.
+
+```bash
+brew install cloudflared        # or use ngrok
+scripts/share.sh                # prints a random access token and a public https URL
+```
+Send people the URL and the token. Stop with Ctrl+C. Use `SIM_TOKEN=... scripts/share.sh` to choose the token and
+`TUNNEL=ngrok` to use ngrok.
+
+**Docker.**
+```bash
+docker build -t ocpp-simulator .
+docker run --rm -p 8100:8100 -e SIM_TOKEN="$(openssl rand -hex 16)" ocpp-simulator
+```
+The container listens on `0.0.0.0` and refuses to start without `SIM_TOKEN`. A hosted copy cannot reach a CSMS on your
+laptop's `localhost`; give it a public `wss://` CSMS URL.
+
+**Hugging Face Spaces (Docker).** Free hosting that builds the `Dockerfile` for you.
+
+1. Create a Hugging Face account and a token with **write** access (Settings > Access Tokens).
+2. Publish: `HF_TOKEN=hf_xxx scripts/deploy_hf.sh <your-hf-username>/ocpp-simulator`
+   (creates a **private** Space; add `VISIBILITY=public` for a public one). `DRY_RUN=1` builds the bundle without pushing.
+3. In the Space: Settings > Variables and secrets > new **secret** `SIM_TOKEN` with a long random value
+   (`openssl rand -hex 16`). The container will not start without it.
+4. Open the **direct URL** `https://<username>-ocpp-simulator.hf.space`, not the huggingface.co page. The login cookie is
+   `SameSite=Strict`, so it is not sent when the app is embedded in the huggingface.co frame.
+
+Things to know about Spaces:
+- **Your CSMS must be reachable from the internet** over `wss://`. A CSMS on your laptop's `localhost` is not. Expose it with a
+  tunnel (`ngrok http 8000`) or deploy it. I believe Spaces only allows outbound connections on ports 80, 443 and 8080; check
+  the current Spaces documentation, and use a standard `wss://host/ocpp` URL on 443.
+- Free Spaces sleep when idle and restart on the next visit. Stations are held in memory, so a restart forgets them.
+- A private Space adds a second lock (only you can open it); the token still protects a public one.
+
+Treat the token like a password: anyone who has it can make the simulator connect to any URL and operate it.
+
 ## Features
 
 - **All 64 OCPP 2.0.1 messages**: 25 charge-point-to-CSMS and 40 CSMS-to-charge-point (DataTransfer both ways). A test fails if one is missing.
@@ -57,5 +98,5 @@ Tests start the mock CSMS in-process on free ports; nothing external is needed.
 
 - Component names in fault-generated `NotifyEvent`s are best effort against the standardized component list and are **not verified against OCTT**.
 - Scenarios that start sessions use cards `CARD1` and `CARD2`; register them as accepted tokens in your CSMS. `unknown_token` expects the CSMS to refuse its token.
-- The simulator API has **no authentication**. Keep it on localhost (CORS is limited to localhost).
+- The API has **no authentication unless `SIM_TOKEN` is set**. Without it, keep it on localhost (CORS is limited to localhost). The token is one shared secret, not per-user accounts, and there is no HTTPS of its own: use a tunnel or reverse proxy for TLS.
 - Stations live in memory; restarting the backend forgets them (the UI re-offers your last form values).

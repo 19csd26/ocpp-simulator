@@ -9,12 +9,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
+from ocpp_simulator.auth import COOKIE, PUBLIC, Auth
 from ocpp_simulator.config import CONNECTOR_TYPES, EV_MODELS, PRESETS, StationConfig
 from ocpp_simulator.faults import CATALOG as FAULTS
 from ocpp_simulator.hub import Hub
@@ -114,7 +115,8 @@ class VariableBody(BaseModel):
     evse_id: int | None = None
 
 
-def create_app() -> FastAPI:
+def create_app(token: str | None = None) -> FastAPI:
+    auth = Auth(token)
     hub = Hub()
     stations: dict[str, Station] = {}
 
@@ -127,6 +129,41 @@ def create_app() -> FastAPI:
     app = FastAPI(title="OCPP 2.0.1 Charging Station Simulator", version="1.0.0", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$", allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"])
     app.state.hub, app.state.stations = hub, stations
+
+    @app.middleware("http")
+    async def require_login(request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/api/") and path not in PUBLIC and not auth.allows(request.cookies, request.headers):
+            return JSONResponse({"detail": "Login required"}, status_code=401)
+        return await call_next(request)
+
+    class Login(BaseModel):
+        token: str
+
+    @app.get("/api/auth")
+    async def auth_state(request: Request):
+        return {"required": auth.required, "authenticated": auth.allows(request.cookies, request.headers)}
+
+    @app.post("/api/login")
+    async def login(body: Login, request: Request):
+        if not auth.required:
+            return {"required": False, "authenticated": True}
+        if auth.locked():
+            raise HTTPException(429, "Too many wrong tokens. Wait a few minutes and try again.")
+        if not auth.check_token(body.token):
+            auth.failed()
+            await asyncio.sleep(1)  # slow down guessing
+            raise HTTPException(401, "Wrong token")
+        response = JSONResponse({"required": True, "authenticated": True})
+        secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"  # a tunnel terminates TLS
+        response.set_cookie(COOKIE, auth.session_value(), httponly=True, samesite="strict", secure=secure, max_age=7 * 86400)
+        return response
+
+    @app.post("/api/logout")
+    async def logout():
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(COOKIE)
+        return response
 
     def get(station_id: str) -> Station:
         st = stations.get(station_id)
@@ -386,6 +423,9 @@ def create_app() -> FastAPI:
     # --------------------------------------------------------------------------------- live updates
     @app.websocket("/ws")
     async def ws(socket: WebSocket):
+        if not auth.allows(socket.cookies, socket.headers):
+            await socket.close(code=4401)
+            return
         await socket.accept()
         queue = hub.subscribe()
         try:
