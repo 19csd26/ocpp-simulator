@@ -11,6 +11,7 @@ There is no database and no CSMS integration. The UI remembers your last entries
 |---|---|
 | [docs/USER_MANUAL.md](docs/USER_MANUAL.md) | Using the UI: adding a charger, sessions, faults, scenarios, message rules |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it is built: modules, data flow, extension points, REST/WebSocket API |
+| [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) | Deploying on Render and connecting a charger to your CSMS |
 
 ## Quick start
 
@@ -57,6 +58,8 @@ laptop's `localhost`; give it a public `wss://` CSMS URL.
 1. Render dashboard > **New > Blueprint**, connect GitHub and pick this repo.
 2. Render asks for `SIM_TOKEN` (a secret, never stored in the repo): enter a long random value, e.g. `openssl rand -hex 16`.
 3. Apply. When the build finishes, open `https://ocpp-simulator.onrender.com` (the exact URL is on the service page) and log in with the token.
+
+Step-by-step guide, including connecting a charger to your CSMS: [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md).
 
 Things to know about Render's free tier (check Render's current terms):
 - Free web services sleep after about 15 minutes without traffic and take a while to wake. Stations are in memory, so a sleep or restart forgets them.
