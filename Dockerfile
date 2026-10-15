@@ -18,5 +18,5 @@ RUN useradd --create-home --uid 1000 sim
 USER sim
 WORKDIR /app/backend
 EXPOSE 8100
-# SIM_TOKEN is required (on Spaces: Settings > Variables and secrets): the server refuses to listen on 0.0.0.0 without it.
+# SIM_TOKEN is required: the server refuses to listen on 0.0.0.0 without it (docker-compose.yml opts out for local use).
 CMD ["python", "-m", "ocpp_simulator", "--host", "0.0.0.0", "--port", "8100"]

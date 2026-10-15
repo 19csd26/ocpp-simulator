@@ -2,7 +2,7 @@
 
 ## 1. Starting
 
-Start the backend (see the README) and open http://127.0.0.1:8100. The sidebar shows whether the simulator
+Start the backend (see the README) and open http://127.0.0.1:8100. In Docker: `docker compose up --build` and open http://localhost:8100; to reach a CSMS on your computer use `host.docker.internal` instead of `localhost` in its URL. The sidebar shows whether the simulator
 backend is connected, an **Add charger** button, and one entry per charger with its state and a summary
 (for example "1 charging · 2 EVSE").
 

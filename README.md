@@ -29,6 +29,19 @@ charger ID (e.g. `CP001`). The station connects to `<url>/<charger id>` with sub
 Development with live reload: run the backend on 8100, then `npm run dev` in `ui/`
 (it proxies `/api` and `/ws`; set `SIM_BACKEND` to point elsewhere).
 
+**In Docker (no Python or Node needed).**
+
+```bash
+docker compose up --build        # then open http://localhost:8100
+docker compose down              # stop and remove it
+```
+- Use another host port with `SIM_PORT=8200 docker compose up --build`, and require a login with `SIM_TOKEN=secret docker compose up --build`.
+- The port is published on `127.0.0.1` only, so just your machine can reach it. That is why compose runs without a token by default.
+- **Reaching a CSMS on your computer:** inside the container `localhost` is the container itself. Use `host.docker.internal`, e.g.
+  `ws://host.docker.internal:8000/ocpp`. On Docker Desktop (Mac/Windows) this works as is. On Linux the CSMS must listen on
+  `0.0.0.0` (e.g. `uvicorn ... --host 0.0.0.0`), not only `127.0.0.1`.
+- Stations are held in memory; stopping the container forgets them.
+
 No CSMS handy? Run the bundled permissive one: `.venv/bin/python -m ocpp_simulator.mock_csms --help`.
 
 ## Share it (tunnel) or run it in Docker

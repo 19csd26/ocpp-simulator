@@ -1,0 +1,26 @@
+# Run the simulator locally in Docker:   docker compose up --build        then open http://localhost:8100
+#   SIM_PORT=8200 docker compose up --build        use another host port
+#   SIM_TOKEN=secret docker compose up --build      also require a login
+#
+# The port is published on 127.0.0.1 only, so just this machine can reach it. That is why --insecure (no token) is
+# acceptable here; set SIM_TOKEN if other people share your machine.
+#
+# Reaching a CSMS that runs on your computer: inside the container "localhost" is the container itself, so use
+# host.docker.internal, e.g.  ws://host.docker.internal:8000/ocpp
+services:
+  simulator:
+    build: .
+    image: ocpp-simulator:local
+    ports:
+      - "127.0.0.1:${SIM_PORT:-8100}:8100"
+    environment:
+      SIM_TOKEN: "${SIM_TOKEN:-}"
+    command: ["python", "-m", "ocpp_simulator", "--host", "0.0.0.0", "--port", "8100", "--insecure"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux; Docker Desktop already provides this name
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/api/auth', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
