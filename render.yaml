@@ -1,0 +1,16 @@
+# Render Blueprint: deploys this repo's Dockerfile as a web service.
+# Render > New > Blueprint > pick this GitHub repo. It asks you for SIM_TOKEN once; the value is stored as a secret
+# on Render and is never written to this file.
+services:
+  - type: web
+    name: ocpp-simulator
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /api/auth   # public endpoint; /api/stations would answer 401
+    envVars:
+      - key: SIM_TOKEN
+        sync: false              # secret: you enter it in the dashboard (openssl rand -hex 16)
+      - key: PORT
+        value: "8100"            # the port the container listens on (see Dockerfile)

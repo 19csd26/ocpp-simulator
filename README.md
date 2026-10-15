@@ -52,7 +52,18 @@ docker run --rm -p 8100:8100 -e SIM_TOKEN="$(openssl rand -hex 16)" ocpp-simulat
 The container listens on `0.0.0.0` and refuses to start without `SIM_TOKEN`. A hosted copy cannot reach a CSMS on your
 laptop's `localhost`; give it a public `wss://` CSMS URL.
 
-**Hugging Face Spaces (Docker).** Free hosting that builds the `Dockerfile` for you.
+**Render (free web service).** `render.yaml` is a Blueprint that deploys the `Dockerfile` straight from this GitHub repo.
+
+1. Render dashboard > **New > Blueprint**, connect GitHub and pick this repo.
+2. Render asks for `SIM_TOKEN` (a secret, never stored in the repo): enter a long random value, e.g. `openssl rand -hex 16`.
+3. Apply. When the build finishes, open `https://ocpp-simulator.onrender.com` (the exact URL is on the service page) and log in with the token.
+
+Things to know about Render's free tier (check Render's current terms):
+- Free web services sleep after about 15 minutes without traffic and take a while to wake. Stations are in memory, so a sleep or restart forgets them.
+- Your CSMS must be reachable from the internet over `wss://`; a CSMS on your laptop's `localhost` is not. Expose it with a tunnel (`ngrok http 8000`) or deploy it.
+- Pushing to `main` redeploys automatically (`autoDeploy`). To change the token later, edit `SIM_TOKEN` under Environment.
+
+**Hugging Face Spaces (Docker).** Builds the `Dockerfile` for you, but Docker Spaces on the free CPU tier now require a Hugging Face **PRO** subscription (creating one on a free account fails with HTTP 402). Static Spaces are free but cannot run this backend. Use the tunnel above for free hosting.
 
 1. Create a Hugging Face account and a token with **write** access (Settings > Access Tokens).
 2. Publish: `HF_TOKEN=hf_xxx scripts/deploy_hf.sh <your-hf-username>/ocpp-simulator`
