@@ -13,7 +13,7 @@ COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend/ocpp_simulator backend/ocpp_simulator
 COPY --from=ui /app/ui/dist ui/dist
-# Hugging Face Spaces runs containers as uid 1000.
+# Fixed uid 1000, which hosted container platforms commonly expect.
 RUN useradd --create-home --uid 1000 sim
 USER sim
 WORKDIR /app/backend

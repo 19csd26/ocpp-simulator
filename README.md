@@ -63,22 +63,7 @@ Things to know about Render's free tier (check Render's current terms):
 - Your CSMS must be reachable from the internet over `wss://`; a CSMS on your laptop's `localhost` is not. Expose it with a tunnel (`ngrok http 8000`) or deploy it.
 - Pushing to `main` redeploys automatically (`autoDeploy`). To change the token later, edit `SIM_TOKEN` under Environment.
 
-**Hugging Face Spaces (Docker).** Builds the `Dockerfile` for you, but Docker Spaces on the free CPU tier now require a Hugging Face **PRO** subscription (creating one on a free account fails with HTTP 402). Static Spaces are free but cannot run this backend. Use the tunnel above for free hosting.
-
-1. Create a Hugging Face account and a token with **write** access (Settings > Access Tokens).
-2. Publish: `HF_TOKEN=hf_xxx scripts/deploy_hf.sh <your-hf-username>/ocpp-simulator`
-   (creates a **private** Space; add `VISIBILITY=public` for a public one). `DRY_RUN=1` builds the bundle without pushing.
-3. In the Space: Settings > Variables and secrets > new **secret** `SIM_TOKEN` with a long random value
-   (`openssl rand -hex 16`). The container will not start without it.
-4. Open the **direct URL** `https://<username>-ocpp-simulator.hf.space`, not the huggingface.co page. The login cookie is
-   `SameSite=Strict`, so it is not sent when the app is embedded in the huggingface.co frame.
-
-Things to know about Spaces:
-- **Your CSMS must be reachable from the internet** over `wss://`. A CSMS on your laptop's `localhost` is not. Expose it with a
-  tunnel (`ngrok http 8000`) or deploy it. I believe Spaces only allows outbound connections on ports 80, 443 and 8080; check
-  the current Spaces documentation, and use a standard `wss://host/ocpp` URL on 443.
-- Free Spaces sleep when idle and restart on the next visit. Stations are held in memory, so a restart forgets them.
-- A private Space adds a second lock (only you can open it); the token still protects a public one.
+Hugging Face Docker Spaces are not an option on a free account: they require a PRO subscription.
 
 Treat the token like a password: anyone who has it can make the simulator connect to any URL and operate it.
 
