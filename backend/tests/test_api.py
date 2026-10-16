@@ -117,7 +117,7 @@ async def test_faults_rules_and_messages_over_http(api, csms):
     assert sent["sent"] and sent["ok"] and sent["status"] == "Accepted"
     bad = (await api.post(f"/api/stations/{sid}/send", json={"action": "Authorize", "payload": {"idToken": {"idToken": "x", "type": "Nope"}}})).json()
     assert not bad["ok"] and bad["error"]
-    assert (await api.post(f"/api/stations/{sid}/send", json={"action": "Reset", "payload": {}})).json()["error"].endswith("is not a message a charging station can send")
+    assert (await api.post(f"/api/stations/{sid}/send", json={"action": "Reset", "payload": {}})).json()["error"].endswith("is not a message a charging station can send in OCPP 2.0.1")
     cmd = (await api.get(f"/api/stations/{sid}/templates/Reset", params={"kind": "command"})).json()
     assert cmd == {"type": "OnIdle"}
 

@@ -1,7 +1,7 @@
-# OCPP 2.0.1 Charge Point Simulator
+# OCPP 1.6 & 2.0.1 Charge Point Simulator
 
 A charge-point simulator with a web UI, for testing a CSMS (central system) without hardware.
-Type the CSMS WebSocket URL and a charger ID; the station connects, boots, and reports every connector
+Type the CSMS WebSocket URL and a charger ID; the station connects (as OCPP 1.6J or 2.0.1, or whichever your CSMS speaks), boots, and reports every connector
 `Available`. Then plug in vehicles, tap cards, inject faults (power meter failure, power loss, network
 loss, ...) and run scripted test scenarios while watching the live OCPP log.
 
@@ -85,6 +85,8 @@ Treat the token like a password: anyone who has it can make the simulator connec
 
 ## Features
 
+- **OCPP 1.6J and 2.0.1, per charger**: choose **Auto** (offers both `ocpp2.0.1` and `ocpp1.6` and uses whichever your CSMS picks), **2.0.1** or **1.6**. All the same sessions, faults, rules and scenarios work on both.
+- **OCPP 1.6J**: all 28 operations (10 from the charger, 19 from the CSMS, DataTransfer both ways), the 1.6 connector status model (Preparing, Charging, SuspendedEV, Finishing, ...), integer transaction ids, configuration keys, offline queueing.
 - **All 64 OCPP 2.0.1 messages**: 25 charge-point-to-CSMS and 40 CSMS-to-charge-point (DataTransfer both ways). A test fails if one is missing.
 - **Station definition**: presets (AC 7 kW, AC 22 kW dual, DC 60 kW dual, DC 150 kW, mixed hub) or a custom EVSE/connector editor; Basic-auth password and security profile; time-scale speed-up.
 - **Sessions**: plug in, tap card, remote start/stop, stop, unplug; vehicle models with state of charge and target; full battery ends the session (`StoppedByEV`).

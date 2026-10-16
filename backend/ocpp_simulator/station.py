@@ -11,6 +11,7 @@ import base64
 import json
 import logging
 import random
+import re
 import ssl
 import time
 from collections import deque
@@ -19,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 from ocpp.charge_point import camel_to_snake_case, remove_nones, serialize_as_dict, snake_to_camel_case
 from ocpp.exceptions import OCPPError, ValidationError
+from ocpp.v16 import call as call16
 from ocpp.v201 import call
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
@@ -27,6 +29,7 @@ from ocpp_simulator.charging import ChargingMixin
 from ocpp_simulator.commands import CommandsMixin
 from ocpp_simulator.config import StationConfig
 from ocpp_simulator.devicemodel import default_model
+from ocpp_simulator.v16 import CP_ACTIONS_16, Link16, V16Mixin
 from ocpp_simulator.faults import FaultsMixin
 from ocpp_simulator.hub import Hub
 from ocpp_simulator.link import Link
@@ -47,7 +50,7 @@ class Result:
     error: str | None = None
 
 
-class Station(ChargingMixin, CommandsMixin, FaultsMixin):
+class Station(ChargingMixin, CommandsMixin, FaultsMixin, V16Mixin):
     def __init__(self, cfg: StationConfig, hub: Hub, response_timeout: float = RESPONSE_TIMEOUT) -> None:
         self.cfg = cfg
         self.hub = hub
@@ -79,6 +82,7 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin):
         self._bg: set[asyncio.Task] = set()
         self._pending: dict[tuple[str, str], str] = {}
         self.notes: deque[str] = deque(maxlen=50)
+        self.init_v16()
         self.init_charging()
         self.init_commands()
         self.init_faults()
@@ -221,15 +225,18 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin):
             url = f"{self.cfg.csms_url.rstrip('/')}/{self.cfg.ocpp_id}"
             try:
                 ping = self.model.get_int("OCPPCommCtrlr", "WebSocketPingInterval", 30) or None
-                async with connect(url, subprotocols=["ocpp2.0.1"], additional_headers=self._headers(), ssl=self._ssl_context(),
+                offered = self.offered_subprotocols()
+                async with connect(url, subprotocols=offered, additional_headers=self._headers(), ssl=self._ssl_context(),
                                    open_timeout=10, ping_interval=ping, ping_timeout=ping, max_size=None) as ws:
                     self.ws = ws
                     self.last_error = None
                     self.connected_since = time.time()
-                    self.link = Link(self.cfg.ocpp_id, _Conn(ws, self), response_timeout=self.response_timeout)
+                    chosen = ws.subprotocol or offered[0]  # a CSMS that names no subprotocol gets our first choice
+                    self._negotiated = "1.6" if chosen == "ocpp1.6" else "2.0.1"
+                    self.link = (Link16 if self.v16 else Link)(self.cfg.ocpp_id, _Conn(ws, self), response_timeout=self.response_timeout)
                     self.link.sim = self
                     self.state = "booting"
-                    self.note(f"Connected to {url}")
+                    self.note(f"Connected to {url} (OCPP {self.version})")
                     self.changed()
                     boot = self.spawn(self._on_connected())
                     try:
@@ -240,6 +247,13 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin):
                 self.last_error = f"connection closed ({exc.rcvd.code if exc.rcvd else 1006})"
             except InvalidHandshake as exc:
                 self.last_error = f"CSMS refused the connection: {exc}"
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status in (400, 403, 426) and self.cfg.ocpp_version != "auto":
+                    self.last_error += f". If the CSMS does not speak OCPP {self.cfg.ocpp_version}, set this charger's OCPP version to Auto (Edit)"
+                answered = re.search(r"unsupported subprotocol: (ocpp[\d.]+)", str(exc))
+                if answered:  # the CSMS picked a protocol this charger did not offer
+                    wants = answered.group(1).removeprefix("ocpp")
+                    self.last_error += f". The CSMS speaks OCPP {wants} but this charger offered {', '.join(offered)}: set its OCPP version to Auto or {wants} (Edit)"
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -333,12 +347,29 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin):
 
     # ---- sending ----------------------------------------------------------------------------------------
     async def request(self, action: str, *, skip_validation: bool = False, **fields) -> Result:
-        """Send a station -> CSMS request and wait for the answer. `fields` are the snake_case dataclass fields."""
+        """Send a station -> CSMS request and wait for the answer. `fields` are the snake_case dataclass fields of the OCPP 2.0.1 message
+        (on a 1.6 connection they are translated into the matching 1.6 message, or dropped when 1.6 has none)."""
+        link = self.link
+        if link is None or self.ws is None:
+            return Result(sent=False, error="offline")
+        if self.v16:
+            out = self.out16(action, fields)
+            if out is None:
+                return Result(sent=True, ok=True)  # nothing like it exists in OCPP 1.6
+            return await self.request_native(out[0], skip_validation=skip_validation, **out[1])
+        try:
+            message = getattr(call, action)(**fields)
+        except TypeError as exc:
+            return Result(sent=False, error=f"bad payload: {exc}")
+        return await self._call(link, message, action, skip_validation)
+
+    async def request_native(self, action: str, *, skip_validation: bool = False, **fields) -> Result:
+        """Send an OCPP 1.6 message as it is (snake_case fields of the 1.6 dataclass)."""
         link = self.link
         if link is None or self.ws is None:
             return Result(sent=False, error="offline")
         try:
-            message = getattr(call, action)(**fields)
+            message = getattr(call16, action)(**fields)
         except TypeError as exc:
             return Result(sent=False, error=f"bad payload: {exc}")
         return await self._call(link, message, action, skip_validation)
@@ -360,19 +391,20 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin):
         except (ConnectionClosed, RuntimeError, OSError):
             return Result(sent=False, error="offline")
         body = remove_nones(snake_to_camel_case(serialize_as_dict(response))) if response is not None else {}
-        status = body.get("status") or (body.get("idTokenInfo") or {}).get("status")
+        status = body.get("status") or (body.get("idTokenInfo") or body.get("idTagInfo") or {}).get("status")
         self.last_responses[action] = {"status": status, "response": body, "at": time.time()}
         return Result(sent=True, ok=True, status=status, response=body)
 
     async def send_raw(self, action: str, payload: dict, *, validate: bool = True) -> Result:
         """Send any station -> CSMS message with a payload in the spec's camelCase (used by the UI and scenarios)."""
-        if action not in self.CP_ACTIONS:
-            return Result(sent=False, error=f"'{action}' is not a message a charging station can send")
+        actions = CP_ACTIONS_16 if self.v16 else self.CP_ACTIONS
+        if action not in actions:
+            return Result(sent=False, error=f"'{action}' is not a message a charging station can send in OCPP {self.version}")
         link = self.link
         if link is None:
             return Result(sent=False, error="offline")
         try:
-            message = getattr(call, action)(**camel_to_snake_case(payload))
+            message = getattr(call16 if self.v16 else call, action)(**camel_to_snake_case(payload))
         except TypeError as exc:
             if validate:
                 return Result(sent=False, error=f"bad payload: {exc}")
@@ -391,7 +423,7 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin):
     async def deliver_tx(self, payload: dict) -> None:
         """Send a TransactionEvent, or queue it when offline. The caller holds `tx_lock` (this keeps seqNo order)."""
         if self.online and not self.tx_queue:
-            res = await self.request("TransactionEvent", **payload)
+            res = await self._send_tx(payload)
             if res.sent and res.error != "timeout":
                 return
         payload = {**payload, "offline": True}
@@ -399,11 +431,17 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin):
         self.note(f"TransactionEvent {payload['event_type']} queued (offline), {len(self.tx_queue)} waiting")
         self.changed()
 
+    async def _send_tx(self, payload: dict) -> Result:
+        """One internal transaction event: a TransactionEvent in OCPP 2.0.1, StartTransaction / MeterValues / StopTransaction in 1.6."""
+        if self.v16:
+            return await self.send_tx16(payload)
+        return await self.request("TransactionEvent", **payload)
+
     async def flush_queue(self) -> None:
         async with self.tx_lock:
             sent = 0
             while self.tx_queue and self.online:
-                res = await self.request("TransactionEvent", **self.tx_queue[0])
+                res = await self._send_tx(self.tx_queue[0])
                 if not res.sent or res.error == "timeout":
                     break
                 self.tx_queue.popleft()
@@ -444,10 +482,10 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin):
         return {
             "id": self.cfg.id, "name": self.cfg.name, "ocpp_id": self.cfg.ocpp_id, "csms_url": self.cfg.csms_url,
             "vendor": self.cfg.vendor, "model": self.cfg.model, "firmware_version": self.cfg.firmware_version,
-            "state": self.state, "powered": self.powered, "boot_status": self.boot_status, "want_connected": self.want_connected,
+            "version": self.version, "negotiated": self._negotiated, "state": self.state, "powered": self.powered, "boot_status": self.boot_status, "want_connected": self.want_connected,
             "last_error": self.last_error, "connected_since": self.connected_since, "reconnect_attempt": self.reconnect_attempt,
             "heartbeat_interval": self.model.get_int("OCPPCommCtrlr", "HeartbeatInterval", 30), "time_scale": self.cfg.time_scale,
-            "config": {"security_profile": self.cfg.security_profile, "verify_tls": self.cfg.verify_tls, "has_password": bool(self.cfg.password),
+            "config": {"ocpp_version": self.cfg.ocpp_version, "security_profile": self.cfg.security_profile, "verify_tls": self.cfg.verify_tls, "has_password": bool(self.cfg.password),
                        "boot_on_reconnect": self.cfg.boot_on_reconnect, "end_on_full": self.cfg.end_on_full, "hardware": [e.model_dump() for e in self.cfg.evses]},
             "stats": dict(self.stats), "queue": len(self.tx_queue), "notes": list(self.notes)[-5:],
             "evses": self.evses_snapshot(), "faults": self.faults_snapshot(), "rules": self.rules.snapshot(),

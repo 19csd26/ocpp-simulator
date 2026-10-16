@@ -27,6 +27,7 @@ Single process, single event loop, in-memory state. No database.
 | `auth.py` | Optional shared-token auth (`SIM_TOKEN`): `POST /api/login` sets an HttpOnly, SameSite=Strict cookie holding a digest (never the token); `Authorization: Bearer` also works. All `/api/*` and `/ws` need it except `/api/auth`, `/api/login`, `/api/logout`. Login failures are limited to 10 per 5 minutes. |
 | `config.py` | `StationConfig`, `EvseSpec`, `ConnectorSpec`, hardware `PRESETS`, `EV_MODELS`, connector types |
 | `station.py` | `Station`: connection loop (backoff, `network_up`, wake event), boot, heartbeat loop (interval re-read every second), `request`/`send_raw`/`_call`, offline queue (`deliver_tx`, `flush_queue`), `snapshot()`. Contains `_Conn`, the socket adapter that logs frames and applies outgoing rules and latency/packet-loss faults. |
+| `v16.py` | OCPP 1.6J. `V16Mixin` (part of `Station`): connector numbering, the 1.6 status model, translation of the internal events into 1.6 messages, configuration keys and the 19 CSMS commands (`cmd16_*`, adapters over the shared `cmd_*` logic). `Link16`: the 1.6 per-connection endpoint. |
 | `link.py` | `Link(ChargePoint)`: one per connection. Builds a handler for each of the 40 CSMS commands (`COMMAND_NAMES`) that calls `Station.run_command`. Applies incoming rules in `route_message`. |
 | `charging.py` | `ChargingMixin`: `Evse`/`Connector`/`Tx`/`EvState`, connector status computation, 1 Hz ticker (energy, SoC, periodic MeterValues), `_reconcile` (desired charging state, ChargingRateChanged, end on full), user actions (plug, tap, stop, authorize), transactions, power-loss resolution, `NotifyEvent`/`SecurityEventNotification`. |
 | `commands.py` | `CommandsMixin`: `cmd_*` implementations: variables/reports, reset, availability, remote start/stop, local list, reservations, firmware/log, certificates (real CSRs via `cryptography`), monitoring, display messages, charging profiles. |
@@ -43,6 +44,26 @@ Single process, single event loop, in-memory state. No database.
 `Station.apply_config` swaps in an edited configuration (hardware changes rebuild the device model and connectors).
 
 `Station` composes `ChargingMixin`, `CommandsMixin`, `FaultsMixin`; it owns the device model, rule set, runner and offline queue.
+
+## OCPP versions
+
+The charger's physics (vehicles, power, energy, faults, rules, scenarios) is protocol independent. The version is negotiated per connection:
+`StationConfig.ocpp_version` is `auto | 2.0.1 | 1.6`; the station offers the matching WebSocket subprotocol(s) (`auto` offers both) and sets
+`Station.version` from the subprotocol the CSMS selects. A `Link` (2.0.1) or `Link16` (1.6) is then created for the connection.
+
+Internally the station still builds events in one shape (the 2.0.1 `TransactionEvent` payload, snake_case fields). On a 1.6 connection:
+
+| Internal event | 1.6 message |
+|---|---|
+| `request(...)` for BootNotification, Heartbeat, StatusNotification, MeterValues, Firmware / Log status, DataTransfer | translated by `V16Mixin.out16`; messages with no 1.6 equivalent (NotifyEvent, SecurityEventNotification, ...) are dropped quietly |
+| `TransactionEvent` Started | `StartTransaction`; the integer `transactionId` from the CSMS is kept in `Station.tx16` (internal id to CSMS id), and survives reconnects |
+| `TransactionEvent` Updated with meter values | `MeterValues` with `transactionId` (a pure state change is reported by `StatusNotification`) |
+| `TransactionEvent` Ended | `StopTransaction` (reason mapped to the 1.6 enum, other values become `Other`) with `transactionData` |
+| `NotifyEvent` (fault reported) | `StatusNotification` with an `errorCode` |
+| connector status | `compute_status16` (Preparing, Charging, SuspendedEV, SuspendedEVSE, Finishing, ...), connector ids numbered across the station |
+
+The offline queue holds the internal events, so the translation (and the transaction id lookup) happens when each event is finally sent, in order.
+Scenario steps may carry `v16` (replacement fields for 1.6; `null` removes a field) and `only` (run on one version) so one catalogue serves both.
 
 ## Key flows
 
@@ -110,3 +131,5 @@ port) and `make_station` fixture. Asyncio mode is `auto`.
 - Authentication is one optional shared token (`SIM_TOKEN`), not accounts. Without it the API is open and the server only binds to localhost. TLS is left to the tunnel or proxy in front.
 - Fault-event component names are best effort and unverified against OCTT.
 - ISO 15118 messages are present and schema-valid but there is no real EV/PKI exchange.
+- OCPP 1.6 covers the 28 operations of the 1.6 specification. The 1.6 security whitepaper extensions (signed firmware, certificates, `SecurityEventNotification`, `ExtendedTriggerMessage`, `GetLog`) are not implemented.
+- A 1.6 `StopTransaction` does not carry the optional `idTag`.

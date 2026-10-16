@@ -68,6 +68,7 @@ class Evse:
         self.register_wh = 100_000.0 + eid * 1_000  # lifetime energy meter
         self.plugged: Connector | None = None
         self.locked = False
+        self.finishing = False  # OCPP 1.6: a session ended and the cable is still plugged in
         self.ev: EvState | None = None
         self.auth: dict | None = None  # authorised id token waiting for / running a session
         self.auth_at: float | None = None
@@ -114,6 +115,8 @@ class ChargingMixin:
 
     # ------------------------------------------------------------------------------------- status
     def compute_status(self, evse: Evse, conn: Connector) -> str:
+        if self.v16:
+            return self.compute_status16(evse, conn)
         if self.evse_faulted(evse):
             return "Faulted"
         if not (self.operative and evse.operative and conn.operative):
@@ -147,12 +150,18 @@ class ChargingMixin:
             for conn in evse.connectors:
                 conn.status = self.compute_status(evse, conn)
                 await self.send_status(evse, conn)
+        if self.v16:
+            await self.send_status0_16()
 
     # ------------------------------------------------------------------------------- tx settings
     def start_points(self) -> set[str]:
+        if self.v16:
+            return {"PowerPathClosed"}  # OCPP 1.6: StartTransaction once the vehicle is connected and the user authorised
         return set(self.model.get_list("TxCtrlr", "TxStartPoint"))
 
     def stop_points(self) -> set[str]:
+        if self.v16:
+            return {"EVConnected", "Authorized"}
         return set(self.model.get_list("TxCtrlr", "TxStopPoint"))
 
     # ---------------------------------------------------------------------------------- metering
@@ -286,7 +295,7 @@ class ChargingMixin:
         if self.online:
             res = await self.request("Authorize", id_token={"id_token": token, "type": ttype})
             if res.ok:
-                status = (res.response or {}).get("idTokenInfo", {}).get("status", "Invalid")
+                status = ((res.response or {}).get("idTokenInfo") or (res.response or {}).get("idTagInfo") or {}).get("status", "Invalid")
                 if status == "Accepted" and m.get_bool("AuthCacheCtrlr", "Enabled", True):
                     self.auth_cache[token] = {"status": "Accepted", "expires": time.time() + m.get_int("AuthCacheCtrlr", "LifeTime", 86400)}
                 return status, "CSMS"
@@ -313,6 +322,7 @@ class ChargingMixin:
             if self.evse_faulted(evse):
                 raise ValueError(f"EVSE {evse_id} is faulted")
             evse.plugged = conn
+            evse.finishing = False
             evse.locked = True
             evse.ev = EvState(key=ev, soc=max(0.0, min(100.0, soc)), target_soc=max(1.0, min(100.0, target_soc)), **{k: v for k, v in EV_MODELS[ev].items()})
             self.note(f"EVSE {evse_id}: vehicle connected ({EV_MODELS[ev]['label']}, SoC {evse.ev.soc:.0f}%)")
@@ -431,6 +441,7 @@ class ChargingMixin:
             tx.reservation_id = res["id"]
             self.reservations.pop(res["id"], None)
         evse.tx = tx
+        evse.finishing = False
         evse.limit_w = self.power_limit_w(evse, tx)
         evse.reported_limit_w = evse.limit_w
         tx.charging_state = self.desired_state(evse)
@@ -475,6 +486,7 @@ class ChargingMixin:
                     sv["value"] = round(energy_wh, 3)
         tx.ended = True
         evse.tx = None
+        evse.finishing = evse.plugged is not None  # OCPP 1.6: the connector is "Finishing" until the cable is unplugged
         evse.auth = None
         evse.auth_at = None
         evse.power_w = 0.0
@@ -509,6 +521,9 @@ class ChargingMixin:
     async def notify_event(self, component: str, variable: str, value, *, trigger: str = "Alerting", evse_id: int | None = None, connector_id: int | None = None,
                            cleared: bool = False, tech_code: str | None = None, tech_info: str | None = None,
                            notification: str = "HardWiredNotification") -> None:
+        if self.v16:
+            await self.notify_event16(tech_code, cleared, evse_id, connector_id, tech_info)
+            return
         self.event_ids += 1
         comp: dict = {"name": component}
         if evse_id is not None:
@@ -653,12 +668,13 @@ class ChargingMixin:
                 "plugged_connector": evse.plugged.id if evse.plugged else None, "authorized": evse.auth["id_token"] if evse.auth else None,
                 "faulted": self.evse_faulted(evse), "remote_pending": evse.pending_remote is not None,
                 "ev": evse.ev.public() if evse.ev else None,
-                "connectors": [{"id": c.id, "type": c.type, "status": self.compute_status(evse, c), "plugged": evse.plugged is c} for c in evse.connectors],
+                "connectors": [{"id": c.id, "type": c.type, "status": self.compute_status(evse, c), "plugged": evse.plugged is c, "ocpp_id": self.cid16(evse, c)} for c in evse.connectors],
                 "reservation": self._res_public(self.reservation_for(evse)),
                 "tx": None if tx is None else {
                     "id": tx.id, "connector_id": tx.connector_id, "started_at": tx.started_at.isoformat(), "charging_state": tx.charging_state,
                     "energy_kwh": round(tx.energy_wh / 1000, 3), "id_token": tx.id_token["id_token"] if tx.id_token else None, "seq_no": tx.seq_no,
                     "duration_s": int((self.now() - tx.started_at).total_seconds()), "total_cost": tx.total_cost, "remote_start_id": tx.remote_start_id,
+                    "ocpp_id": self.tx16.get(tx.id),
                 },
             })
         return out

@@ -28,7 +28,8 @@ async def test_builtin_scenario_passes_against_a_cooperative_csms(csms, make_sta
     st = await make_station(connect=(sid != "smoke_boot"), time_scale=300 if sid == "battery_full" else 60)
     run = await run_scenario(st, sid)
     assert run.status == "passed", failures(run)
-    assert all(s.status == "passed" for s in run.steps)
+    assert all(s.status in ("passed", "skipped") for s in run.steps)  # steps for the other OCPP version are skipped
+    assert any(s.status == "passed" for s in run.steps)
 
 
 @pytest.mark.slow

@@ -3,7 +3,9 @@ import { api, type Meta, type Snapshot } from '../api'
 import { useToast } from './Toast'
 
 interface Hw { current_type: 'AC' | 'DC'; max_power_kw: number; voltage: number; phases: number; connectors: { type: string }[] }
-interface Saved { name: string; ocpp_id: string; csms_url: string; preset: string; security_profile: number }
+interface Saved { name: string; ocpp_id: string; csms_url: string; preset: string; security_profile: number; ocpp_version?: Version }
+type Version = 'auto' | '2.0.1' | '1.6'
+const PROTOCOL: Record<Version, string> = { auto: 'ocpp2.0.1 or ocpp1.6, whichever the CSMS accepts', '2.0.1': 'ocpp2.0.1', '1.6': 'ocpp1.6' }
 
 const KEY = 'sim.saved'
 const load = (): Saved[] => { try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') } catch { return [] } }
@@ -20,6 +22,7 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
   const [password, setPassword] = useState('')
   const [dropPassword, setDropPassword] = useState(false)
   const [profile, setProfile] = useState(cfg?.security_profile ?? last?.security_profile ?? 1)
+  const [version, setVersion] = useState<Version>(cfg?.ocpp_version ?? last?.ocpp_version ?? 'auto')
   const [verify, setVerify] = useState(cfg?.verify_tls ?? true)
   const [preset, setPreset] = useState(last?.preset ?? 'ac_22_dual')
   const [custom, setCustom] = useState<Hw[] | null>((cfg?.hardware as Hw[] | undefined) ?? null)
@@ -45,7 +48,7 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
       if (edit) {
         const body: Record<string, unknown> = { name: name.trim() || `Simulator ${chargerId}`, time_scale: scale, boot_on_reconnect: bootOnReconnect, end_on_full: endOnFull }
         if (!locked) {
-          Object.assign(body, { ocpp_id: chargerId.trim(), csms_url: url.trim(), security_profile: profile, verify_tls: verify })
+          Object.assign(body, { ocpp_id: chargerId.trim(), csms_url: url.trim(), security_profile: profile, ocpp_version: version, verify_tls: verify })
           if (password || dropPassword) body.password = dropPassword ? '' : password
           if (hwTouched) Object.assign(body, custom ? { evses: custom } : { preset })
         }
@@ -57,9 +60,9 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
       }
       const snap = await api<Snapshot>('/api/stations', {
         method: 'POST',
-        body: { name: name.trim() || `Simulator ${chargerId}`, ocpp_id: chargerId.trim(), csms_url: url.trim(), password: password || null, security_profile: profile, verify_tls: verify, preset, evses: custom, time_scale: scale, connect },
+        body: { name: name.trim() || `Simulator ${chargerId}`, ocpp_id: chargerId.trim(), csms_url: url.trim(), password: password || null, security_profile: profile, ocpp_version: version, verify_tls: verify, preset, evses: custom, time_scale: scale, connect },
       })
-      const entry: Saved = { name: name.trim(), ocpp_id: chargerId.trim(), csms_url: url.trim(), preset, security_profile: profile }
+      const entry: Saved = { name: name.trim(), ocpp_id: chargerId.trim(), csms_url: url.trim(), preset, security_profile: profile, ocpp_version: version }
       localStorage.setItem(KEY, JSON.stringify([entry, ...saved.filter((s) => !(s.ocpp_id === entry.ocpp_id && s.csms_url === entry.csms_url))].slice(0, 8)))
       toast(`Station ${snap.ocpp_id} added${connect ? ' – connecting…' : ''}`)
       onAdded(snap)
@@ -82,13 +85,13 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
           <input value={chargerId} disabled={locked} onChange={(e) => setChargerId(e.target.value)} placeholder="CP001" pattern="[A-Za-z0-9_.\-]{1,60}" required spellCheck={false} />
         </label>
       </div>
-      <div className="url-preview mono">Connects to: {target} · subprotocol ocpp2.0.1</div>
+      <div className="url-preview mono">Connects to: {target} · subprotocol {PROTOCOL[version]}</div>
 
       {saved.length > 0 && (
         <div className="saved">
           <small className="muted" style={{ alignSelf: 'center' }}>Recent:</small>
           {saved.map((s) => (
-            <button type="button" key={s.csms_url + s.ocpp_id} className="ghost small" onClick={() => { setUrl(s.csms_url); setChargerId(s.ocpp_id); setName(s.name); setPreset(s.preset); setProfile(s.security_profile) }}>{s.ocpp_id} · {s.csms_url.replace(/^wss?:\/\//, '')}</button>
+            <button type="button" key={s.csms_url + s.ocpp_id} className="ghost small" onClick={() => { setUrl(s.csms_url); setChargerId(s.ocpp_id); setName(s.name); setPreset(s.preset); setProfile(s.security_profile); setVersion(s.ocpp_version ?? 'auto') }}>{s.ocpp_id} · {s.csms_url.replace(/^wss?:\/\//, '')}</button>
           ))}
         </div>
       )}
@@ -100,6 +103,11 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
         <label>Security profile
           <select value={profile} disabled={locked} onChange={(e) => setProfile(Number(e.target.value))}>
             <option value={0}>0 · none</option><option value={1}>1 · Basic auth (ws://)</option><option value={2}>2 · Basic auth + TLS (wss://)</option><option value={3}>3 · Mutual TLS</option>
+          </select>
+        </label>
+        <label>OCPP version
+          <select value={version} disabled={locked} onChange={(e) => setVersion(e.target.value as Version)}>
+            <option value="auto">Auto · offer 2.0.1 and 1.6</option><option value="2.0.1">OCPP 2.0.1</option><option value="1.6">OCPP 1.6J</option>
           </select>
         </label>
         <label>Display name (optional)<input value={name} onChange={(e) => setName(e.target.value)} placeholder={`Simulator ${chargerId}`} /></label>

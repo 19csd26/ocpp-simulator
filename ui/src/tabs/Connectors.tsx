@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast'
 const STATE_CHIP: Record<string, string> = { Charging: 'on', EVConnected: 'info', SuspendedEV: 'warn', SuspendedEVSE: 'warn', Idle: '' }
 const fmt = (s: number) => `${Math.floor(s / 3600) ? Math.floor(s / 3600) + ':' : ''}${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 
-function EvseCard({ id, e, meta, faults, goFaults }: { id: string; e: EvseState; meta: Meta; faults: Snapshot['faults']['active']; goFaults: () => void }) {
+function EvseCard({ id, e, meta, faults, goFaults, version }: { id: string; e: EvseState; meta: Meta; faults: Snapshot['faults']['active']; goFaults: () => void; version: string }) {
   const toast = useToast()
   const [ev, setEv] = useState('mid')
   const [soc, setSoc] = useState(20)
@@ -39,7 +39,7 @@ function EvseCard({ id, e, meta, faults, goFaults }: { id: string; e: EvseState;
       </div>
       <div className="row">
         {e.connectors.map((c) => (
-          <span key={c.id} className={`conn s-${c.status}`} title={`Connector ${c.id}`}><i /><span style={{ color: 'var(--text)' }}>{c.id} · {c.type}</span><b>{c.status}</b>{c.plugged && ' 🔌'}</span>
+          <span key={c.id} className={`conn s-${c.status}`} title={`Connector ${c.id}`}><i /><span style={{ color: 'var(--text)' }}>{c.id} · {c.type}</span><b>{c.status}</b>{c.plugged && ' 🔌'}{version === '1.6' && <small className="muted" title="OCPP 1.6 numbers the connectors of the whole charge point"> #{c.ocpp_id}</small>}</span>
         ))}
       </div>
       {mine.length > 0 && <div className="quick">{mine.map((f) => <span key={f.id} className="fault-pill">⚠ {f.title}<button className="danger" onClick={() => void api(`/api/stations/${id}/faults/${f.id}`, { method: 'DELETE' }).catch((x) => toast(x.message, 'error'))}>Clear</button></span>)}</div>}
@@ -133,7 +133,7 @@ export default function Connectors({ st, meta, goFaults }: { st: Snapshot; meta:
         <span className="spacer" />
         <small className="muted">Every connector is reported to the CSMS as soon as the boot is accepted.</small>
       </div>
-      <div className="evse-grid">{st.evses.map((e) => <EvseCard key={e.id} id={st.id} e={e} meta={meta} faults={st.faults.active} goFaults={goFaults} />)}</div>
+      <div className="evse-grid">{st.evses.map((e) => <EvseCard key={e.id} id={st.id} e={e} meta={meta} faults={st.faults.active} goFaults={goFaults} version={st.version} />)}</div>
     </div>
   )
 }

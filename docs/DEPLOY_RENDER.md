@@ -76,9 +76,10 @@ In the simulator UI:
 2. **WebSocket URL of the CSMS:** the base URL from part 2, for example `wss://abc123.ngrok-free.app/ocpp`.
 3. **Charger ID:** the OCPP ID from part 3, for example `CP001`.
 4. Check the **Connects to:** preview. It must read `<base URL>/<charger ID>` with subprotocol `ocpp2.0.1`.
-5. **Password:** enter it only if the station has one in the CSMS. Set **Security profile** to **1 (Basic auth)** when
+5. **OCPP version:** leave it on **Auto** unless you want to force one. The charger offers both `ocpp2.0.1` and `ocpp1.6` and uses what your CSMS picks (the header shows `OCPP 1.6` or `OCPP 2.0.1`).
+6. **Password:** enter it only if the station has one in the CSMS. Set **Security profile** to **1 (Basic auth)** when
    using a password and a `ws://` or `wss://` URL, or to **2** with a `wss://` URL. Use **0** if there is no password.
-6. Pick the **Hardware** (a preset or **Custom**), keep **Connect immediately** ticked, and click **Add charger**.
+7. Pick the **Hardware** (a preset or **Custom**), keep **Connect immediately** ticked, and click **Add charger**.
 
 ### What you should see
 
@@ -108,7 +109,7 @@ In the simulator UI:
 | Stays **connecting** or **offline**, Reconnects keeps rising | The URL is wrong or unreachable from the internet. Open the Render **Logs** and the simulator's log panel for the error. A `localhost` or private-network URL cannot work from Render. |
 | Error mentions HTTP 401 or 403 | The station has a password in the CSMS. Enter it and use security profile 1 or 2. |
 | Error mentions HTTP 404 or the station is refused | The OCPP ID does not exist in the CSMS. Create it in part 3. |
-| Error mentions subprotocol | The CSMS endpoint is not speaking `ocpp2.0.1`. Check the URL path ends in `/ocpp`. |
+| Error mentions `unsupported subprotocol` | The CSMS answered with a protocol the charger did not offer (for example your CSMS speaks only OCPP 1.6). Set the OCPP version to **Auto** or to the version named in the message (**Edit**, while disconnected). |
 | Boot is `Pending` or `Rejected` | A CSMS policy. The charger retries after the interval the CSMS returns. |
 | Tap card says Invalid | The card is not registered as an accepted token in the CSMS. |
 | It worked, then everything vanished | The Render free tier slept or restarted and the simulator keeps stations in memory. Open the page and add the charger again. |

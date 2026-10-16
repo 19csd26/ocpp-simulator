@@ -30,7 +30,7 @@ export default function Console({ st, meta, logs, run, onClearLog, onDeleted }: 
     <>
       <div className="page-title">
         <div className="stack" style={{ gap: 4 }}>
-          <div className="row"><h2>{st.name}</h2><span className={`chip ${STATE_TONE[st.state] ?? ''}`}>{st.state}{st.boot_status && st.state !== 'online' ? ` · boot ${st.boot_status}` : ''}</span></div>
+          <div className="row"><h2>{st.name}</h2><span className={`chip ${STATE_TONE[st.state] ?? ''}`}>{st.state}{st.boot_status && st.state !== 'online' ? ` · boot ${st.boot_status}` : ''}</span><span className="chip info" title={st.config.ocpp_version === 'auto' ? `Auto: offers ocpp2.0.1 and ocpp1.6 and uses whichever the CSMS picks${st.negotiated ? ` (negotiated ${st.negotiated})` : ' (not negotiated yet)'}` : 'OCPP version of this charger'}>OCPP {st.negotiated ?? (st.config.ocpp_version === 'auto' ? 'auto' : st.version)}</span></div>
           <small className="muted mono">{st.ocpp_id} → {st.csms_url.replace(/\/+$/, '')}/{st.ocpp_id} · {st.vendor} {st.model} · fw {st.firmware_version} · {st.evses.length} EVSE / {chargers} connector{chargers > 1 ? 's' : ''}</small>
           {st.last_error && st.state !== 'online' && <small className="error">⚠ {st.last_error}</small>}
         </div>

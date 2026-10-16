@@ -50,9 +50,12 @@ class CommandsMixin:
     # ---------------------------------------------------------------------------------- reset / power
     async def reboot(self, boot_reason: str, tx_reason: str = "ImmediateReset", pause: float = 2.0) -> None:
         self.note(f"Rebooting ({boot_reason})")
+        if self.v16:
+            await self.end_all(tx_reason, "ResetCommand")  # OCPP 1.6: StopTransaction goes out while still connected
         self.state = "rebooting"
         self.changed()
-        await self.end_all(tx_reason, "ResetCommand")
+        if not self.v16:
+            await self.end_all(tx_reason, "ResetCommand")
         await self.request_flush_pause()
         self.boot_required = True
         self.next_boot_reason = boot_reason

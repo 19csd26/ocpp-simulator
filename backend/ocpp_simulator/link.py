@@ -25,8 +25,11 @@ def snake(name: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower().replace("e_v_", "ev_")
 
 
-class Link(BaseChargePoint):
+class RuleRouting:
+    """Message-level fault rules for incoming CSMS commands, shared by the 2.0.1 and 1.6 endpoints."""
+
     sim = None  # set by the Station right after construction
+    reject_payloads: dict = REJECT_PAYLOADS
 
     async def route_message(self, raw_msg):
         """Apply message-level fault rules to incoming CSMS commands before the library handles them."""
@@ -56,7 +59,7 @@ class Link(BaseChargePoint):
             await self._connection.send(json.dumps([4, msg_id, code, rule.params.get("description", "Injected failure"), {}]))
             return True
         if rule.effect == "reject":
-            payload = REJECT_PAYLOADS.get(action)
+            payload = self.reject_payloads.get(action)
             if payload is None:
                 await self._connection.send(json.dumps([4, msg_id, "NotSupported", f"{action} cannot be rejected", {}]))
             else:
@@ -68,6 +71,10 @@ class Link(BaseChargePoint):
             await self._connection.send(json.dumps([3, msg_id, {"bogusField": True}]))
             return True
         return False
+
+
+class Link(RuleRouting, BaseChargePoint):
+    """OCPP 2.0.1 endpoint."""
 
 
 def _make_handler(name: str):

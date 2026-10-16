@@ -20,7 +20,7 @@ export default function Device({ st }: { st: Snapshot }) {
   }
   return (
     <div className="card stack">
-      <div className="row"><h3>Device model</h3><small className="muted">{vars.length} variables. The CSMS reads and changes these with GetVariables / SetVariables / GetBaseReport; you can change the read-write ones here too. Changes take effect immediately (heartbeat interval, meter sampling, start/stop points, …).</small><span className="spacer" /><input style={{ width: 220 }} placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      <div className="row"><h3>{st.version === '1.6' ? 'Configuration keys' : 'Device model'}</h3><small className="muted">{vars.length} {st.version === '1.6' ? 'keys. The CSMS reads and changes these with GetConfiguration / ChangeConfiguration' : 'variables. The CSMS reads and changes these with GetVariables / SetVariables / GetBaseReport'}; you can change the read-write ones here too. Changes take effect immediately (heartbeat interval, meter sampling, start/stop points, …).</small><span className="spacer" /><input style={{ width: 220 }} placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       <div style={{ overflow: 'auto', maxHeight: '60vh' }}>
         <table>
           <thead><tr><th>Component</th><th>Variable</th><th>Value</th><th>Type</th><th>Access</th></tr></thead>

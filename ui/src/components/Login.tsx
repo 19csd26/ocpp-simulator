@@ -22,7 +22,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
     <div className="main" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
       <form className="card form" onSubmit={submit} style={{ width: 380 }}>
-        <div className="brand" style={{ marginBottom: 8 }}><span className="brand-mark">⚡</span><div><b>OCPP SIM</b><small>2.0.1 charger simulator</small></div></div>
+        <div className="brand" style={{ marginBottom: 8 }}><span className="brand-mark">⚡</span><div><b>OCPP SIM</b><small>1.6 &amp; 2.0.1 charger simulator</small></div></div>
         <label>Access token
           <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="the SIM_TOKEN this server was started with" autoFocus autoComplete="current-password" />
         </label>

@@ -20,9 +20,9 @@ function Send({ st, meta }: { st: Snapshot; meta: Meta }) {
   return (
     <div className="card stack">
       <h3>Send a message to the CSMS</h3>
-      <small className="muted">All 25 messages a charging station can send. Edit the sample payload (spec camelCase) and send it; the CSMS's answer is shown below and in the live log. Turn validation off to send a deliberately broken message.</small>
+      <small className="muted">All {(meta.versions?.[st.version]?.station_messages ?? meta.station_messages).length} messages a charging station can send in OCPP {st.version}. Edit the sample payload (spec camelCase) and send it; the CSMS's answer is shown below and in the live log. Turn validation off to send a deliberately broken message.</small>
       <div className="row">
-        <label style={{ flex: 1, minWidth: 220 }}>Message<select value={action} onChange={(e) => setAction(e.target.value)}>{meta.station_messages.map((m) => <option key={m}>{m}</option>)}</select></label>
+        <label style={{ flex: 1, minWidth: 220 }}>Message<select value={action} onChange={(e) => setAction(e.target.value)}>{(meta.versions?.[st.version]?.station_messages ?? meta.station_messages).map((m) => <option key={m}>{m}</option>)}</select></label>
         <button className="ghost small" style={{ alignSelf: 'end' }} onClick={() => void load(action)}>Reset sample</button>
       </div>
       <textarea rows={12} value={body} onChange={(e) => setBody(e.target.value)} spellCheck={false} />
@@ -42,7 +42,8 @@ function Rules({ st, meta }: { st: Snapshot; meta: Meta }) {
   const [times, setTimes] = useState('')
   const [probability, setProbability] = useState(100)
   const effects = meta.rule_effects[direction]
-  const actions = direction === 'out' ? meta.station_messages : meta.commands
+  const ver = meta.versions?.[st.version]
+  const actions = direction === 'out' ? (ver?.station_messages ?? meta.station_messages) : (ver?.commands ?? meta.commands)
   const add = async () => {
     const params: Record<string, unknown> = {}
     if (effect === 'delay') params.delay_ms = delay

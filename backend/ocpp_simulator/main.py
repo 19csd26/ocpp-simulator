@@ -23,7 +23,8 @@ from ocpp_simulator.link import COMMAND_NAMES
 from ocpp_simulator.rules import ERROR_CODES, IN_EFFECTS, OUT_EFFECTS
 from ocpp_simulator.scenarios import CATALOG_SCENARIOS, Runner
 from ocpp_simulator.station import Station
-from ocpp_simulator.templates import command_template, message_template
+from ocpp_simulator.v16 import COMMAND_NAMES_16, CP_ACTIONS_16
+from ocpp_simulator.templates import command_template, command_template16, message_template, message_template16
 
 UI_DIST = Path(__file__).resolve().parent.parent.parent / "ui" / "dist"
 
@@ -34,6 +35,7 @@ class NewStation(BaseModel):
     csms_url: str
     password: str | None = None
     security_profile: Literal[0, 1, 2, 3] = 1
+    ocpp_version: Literal["auto", "2.0.1", "1.6"] = "2.0.1"
     verify_tls: bool = True
     preset: str = "ac_22_dual"
     evses: list[dict] | None = None  # custom hardware (overrides the preset)
@@ -55,6 +57,7 @@ class StationPatch(BaseModel):
     csms_url: str | None = None
     ocpp_id: str | None = Field(None, pattern=r"^[A-Za-z0-9_.-]{1,60}$")
     security_profile: Literal[0, 1, 2, 3] | None = None
+    ocpp_version: Literal["auto", "2.0.1", "1.6"] | None = None
     verify_tls: bool | None = None
     preset: str | None = None
     evses: list[dict] | None = None  # custom hardware (overrides the preset)
@@ -126,7 +129,7 @@ def create_app(token: str | None = None) -> FastAPI:
         for st in list(stations.values()):
             await st.shutdown()
 
-    app = FastAPI(title="OCPP 2.0.1 Charging Station Simulator", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="OCPP 1.6 and 2.0.1 Charging Station Simulator", version="1.0.0", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$", allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"])
     app.state.hub, app.state.stations = hub, stations
 
@@ -190,6 +193,7 @@ def create_app(token: str | None = None) -> FastAPI:
             "faults": FAULTS,
             "scenarios": [{k: v for k, v in s.items() if k != "steps"} | {"steps": len(s["steps"])} for s in CATALOG_SCENARIOS.values()],
             "station_messages": sorted(Station.CP_ACTIONS), "commands": COMMAND_NAMES,
+            "versions": {"2.0.1": {"station_messages": sorted(Station.CP_ACTIONS), "commands": COMMAND_NAMES}, "1.6": {"station_messages": sorted(CP_ACTIONS_16), "commands": COMMAND_NAMES_16}},
             "rule_effects": {"out": sorted(OUT_EFFECTS), "in": sorted(IN_EFFECTS)}, "error_codes": ERROR_CODES,
             "stop_reasons": sorted({"DeAuthorized", "EmergencyStop", "EnergyLimitReached", "EVDisconnected", "GroundFault", "ImmediateReset", "Local", "LocalOutOfCredit",
                                     "MasterPass", "Other", "OvercurrentFault", "PowerLoss", "PowerQuality", "Reboot", "Remote", "SOCLimitReached", "StoppedByEV", "TimeLimitReached", "Timeout"}),
@@ -249,7 +253,7 @@ def create_app(token: str | None = None) -> FastAPI:
         # Only what is really different counts as a change (the edit form sends every field).
         current = st.cfg.model_dump()
         changes = {k: v for k, v in changes.items() if current.get(k) != v}
-        locked = {"ocpp_id", "csms_url", "password", "security_profile", "verify_tls", "evses", "model"} & changes.keys()
+        locked = {"ocpp_id", "csms_url", "password", "security_profile", "ocpp_version", "verify_tls", "evses", "model"} & changes.keys()
         if locked and st.want_connected:
             raise HTTPException(409, "Disconnect the station before changing its charger id, URL, credentials or hardware")
         if "evses" in changes:
@@ -336,6 +340,8 @@ def create_app(token: str | None = None) -> FastAPI:
     async def template(station_id: str, action: str, kind: Literal["message", "command"] = "message"):
         st = get(station_id)
         try:
+            if st.v16:
+                return message_template16(action, st) if kind == "message" else command_template16(action, st)
             return message_template(action, st) if kind == "message" else command_template(action, st)
         except KeyError:
             raise HTTPException(404, f"No {kind} named '{action}'")
@@ -408,11 +414,20 @@ def create_app(token: str | None = None) -> FastAPI:
 
     @app.get("/api/stations/{station_id}/variables")
     async def variables(station_id: str):
-        return get(station_id).model.snapshot()
+        st = get(station_id)
+        if st.v16:  # OCPP 1.6 has configuration keys instead of a device model
+            return [{"component": "Configuration", "evse_id": None, "connector_id": None, "variable": i["key"], "value": i["value"], "data_type": i["kind"],
+                     "mutability": "ReadOnly" if i["readonly"] else "ReadWrite", "unit": None, "values_list": None} for i in st.config_items()]
+        return st.model.snapshot()
 
     @app.put("/api/stations/{station_id}/variables")
     async def set_variable(station_id: str, body: VariableBody):
         st = get(station_id)
+        if st.v16:
+            status = st.change_configuration(body.variable, body.value)
+            if status != "Accepted":
+                raise HTTPException(422, f"Cannot set {body.variable}: {status}")
+            return {"status": status}
         comp = {"name": body.component, **({"evse": {"id": body.evse_id}} if body.evse_id is not None else {})}
         status, _ = st.model.write(comp, {"name": body.variable}, body.value)
         if status not in ("Accepted", "RebootRequired"):

@@ -19,7 +19,7 @@ function Shell() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="brand"><span className="brand-mark">⚡</span><div><b>OCPP SIM</b><small>2.0.1 charger simulator</small></div></div>
+        <div className="brand"><span className="brand-mark">⚡</span><div><b>OCPP SIM</b><small>1.6 &amp; 2.0.1 charger simulator</small></div></div>
         <div className="sim-link"><span className={`dot ${sim.connected ? 'on' : 'bad'}`} />{sim.connected ? 'Simulator backend connected' : 'Backend unreachable – retrying…'}</div>
         <button onClick={() => { setAdding(true); setSelected(null) }}>＋ Add charger</button>
         {sim.order.map((id) => {
@@ -27,7 +27,7 @@ function Shell() {
           return (
             <button key={id} className={`st-item ${current === id && !adding ? 'active' : ''}`} onClick={() => { setSelected(id); setAdding(false) }}>
               <span className="t"><span className={`dot ${s.state === 'online' ? 'on' : s.state === 'stopped' ? '' : STATE_TONE[s.state] === 'bad' ? 'bad' : 'warn'}`} />{s.name}</span>
-              <small className="mono">{s.ocpp_id} · {s.state}</small>
+              <small className="mono">{s.ocpp_id} · {s.state} · v{s.negotiated ?? (s.config.ocpp_version === 'auto' ? 'auto' : s.version)}</small>
               <small>{s.evses.reduce((n, e) => n + (e.tx ? 1 : 0), 0)} charging · {s.evses.length} EVSE{s.faults.active.length ? ` · ⚠ ${s.faults.active.length}` : ''}</small>
             </button>
           )
@@ -40,7 +40,7 @@ function Shell() {
           <>
             {!st && !adding && (
               <div className="welcome card">
-                <h2>Simulate an OCPP 2.0.1 charge point</h2>
+                <h2>Simulate an OCPP 1.6 or 2.0.1 charge point</h2>
                 <p className="muted" style={{ maxWidth: 560, lineHeight: 1.6 }}>Type the WebSocket URL of your CSMS and a charger ID, pick the hardware, and the simulator boots, brings every connector online and lets you run sessions, inject faults (power meter failure, power loss, network loss, …) and run test cases.</p>
                 <button onClick={() => setAdding(true)}>＋ Add your first charger</button>
               </div>

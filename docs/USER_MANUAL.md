@@ -22,6 +22,7 @@ Click **Add charger**.
 | Display name | Optional label |
 | Hardware | A preset or **Custom** (edit EVSEs and connectors: current type AC/DC, power, connector types) |
 | Charging speed-up | Multiplies energy and battery progress only; protocol timers stay real |
+| OCPP version | **Auto** offers `ocpp2.0.1` and `ocpp1.6` and uses whichever your CSMS accepts (the header shows which). **2.0.1** or **1.6** offers only that one. |
 | Connect immediately | Starts the connection straight away |
 
 When the CSMS accepts `BootNotification`, every connector is reported `Available`. The header shows
@@ -39,6 +40,32 @@ Click **Edit** in the charger header to change its settings in the same form use
 - Changing the hardware replaces the EVSEs and connectors and rebuilds the device model with its defaults.
   It is refused while a vehicle is plugged in, a fault is active or the offline queue is not empty.
 - Reconnect (**Connect**) to apply a new URL, ID or credentials; the station then boots again as the new identity.
+
+## 2b. OCPP 1.6 and 2.0.1
+
+A charger speaks one version per connection, shown as a chip next to its name (`OCPP 1.6` or `OCPP 2.0.1`) and in the sidebar.
+
+- **Auto** (the default in the form) is the most flexible choice: the charger offers both protocols during the WebSocket handshake and
+  your CSMS picks. Use **2.0.1** or **1.6** to force one, for example when a CSMS must be tested on a specific version.
+- Changing the version needs the charger to be disconnected (**Edit**).
+- If you see *"CSMS refused the connection: unsupported subprotocol: ocpp1.6"*, your CSMS answered with a protocol this charger did not offer.
+  Set the OCPP version to **Auto** or **1.6**.
+
+What changes on a 1.6 charger (everything else, including vehicles, faults, rules and scenarios, works the same):
+
+| | OCPP 2.0.1 | OCPP 1.6J |
+|---|---|---|
+| Connectors | EVSE 1 / connector 1 | Numbered `#1..#N` across the whole charge point (shown next to each connector); `#0` is the station |
+| Connector status | Available, Occupied, Reserved, Unavailable, Faulted | Available, **Preparing**, **Charging**, **SuspendedEV**, **SuspendedEVSE**, **Finishing**, Reserved, Unavailable, Faulted |
+| Session | `TransactionEvent` Started / Updated / Ended | `StartTransaction` (CSMS returns an integer id), `MeterValues`, `StopTransaction` |
+| Faults | `NotifyEvent` | `StatusNotification` with an `errorCode` (for example `GroundFailure`, `PowerMeterFailure`, `HighTemperature`) |
+| Settings | Device model (GetVariables / SetVariables) | Configuration keys (GetConfiguration / ChangeConfiguration); the Device tab becomes **Configuration keys** |
+| Remote control | RequestStart/StopTransaction | RemoteStart/StopTransaction |
+| After a stop with the cable plugged in | Occupied | **Finishing** until you unplug |
+
+Messages that exist only in 2.0.1 (device model reports, display messages, monitoring, certificates, ISO 15118, `NotifyEvent`,
+`SecurityEventNotification`, ...) are quietly not sent on a 1.6 charger. The **Messages** tab lists the 10 messages a 1.6 charger can send.
+Offline behaviour is the same: events queue and are delivered in order after reconnecting, and a session that started offline gets its transaction id then.
 
 ## 3. Connectors tab: running a session
 
@@ -61,7 +88,7 @@ authorized afterwards, as the spec requires.
 
 ## 4. Test cases tab: scenarios
 
-Choose a scenario and **Run**. Each step shows pending, running, passed, failed or skipped with a detail
+Choose a scenario and **Run**. Every built-in scenario runs on both OCPP versions: version-specific checks are swapped automatically (for example a `TransactionEvent` Ended check becomes a `StopTransaction` check on 1.6) and steps that only make sense on the other version show as *skipped*. Each step shows pending, running, passed, failed or skipped with a detail
 message. A run always starts by clearing faults and unplugging vehicles. Only one scenario runs per charger; use **Stop** to cancel.
 
 | Group | Scenarios |

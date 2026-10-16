@@ -1,4 +1,4 @@
-"""A small, permissive OCPP 2.0.1 CSMS for testing the simulator without a real backend.
+"""A small, permissive OCPP 2.0.1 and 1.6 CSMS for testing the simulator without a real backend.
 
 It accepts every message a charging station can send, records them, and can send any command
 to a connected station:
@@ -16,6 +16,10 @@ from http import HTTPStatus
 
 from ocpp.charge_point import camel_to_snake_case, remove_nones, serialize_as_dict, snake_to_camel_case
 from ocpp.routing import on
+from ocpp.v16 import ChargePoint as BaseChargePoint16
+from ocpp.v16 import call as call16
+from ocpp.v16 import call_result as result16
+from ocpp.v16.enums import Action as Action16
 from ocpp.v201 import ChargePoint as BaseChargePoint
 from ocpp.v201 import call, call_result
 from ocpp.v201.enums import Action
@@ -32,6 +36,12 @@ CP_INITIATED = [
 ]
 
 
+CP_INITIATED_16 = [
+    "Authorize", "BootNotification", "DataTransfer", "DiagnosticsStatusNotification", "FirmwareStatusNotification", "Heartbeat",
+    "MeterValues", "StartTransaction", "StatusNotification", "StopTransaction",
+]
+
+
 def _snake(name: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower().replace("e_v_", "ev_")
 
@@ -42,9 +52,15 @@ def _now() -> str:
 
 class MockChargePointHandler(BaseChargePoint):
     csms: "MockCsms"
+    version = "2.0.1"
 
 
-def _make_handler(name: str):
+class MockChargePointHandler16(BaseChargePoint16):
+    csms: "MockCsms"
+    version = "1.6"
+
+
+def _make_handler(name: str, results=call_result, actions=Action):
     async def handler(self, **kwargs):
         csms: MockCsms = self.csms
         csms.received.append({"cp": self.id, "action": name, "payload": kwargs, "at": _now()})
@@ -52,14 +68,16 @@ def _make_handler(name: str):
         if csms.delay:
             await asyncio.sleep(csms.delay)
         reply = csms.reply(self.id, name, kwargs)
-        return getattr(call_result, name)(**reply)
+        return getattr(results, name)(**reply)
 
     handler.__name__ = f"on_{_snake(name)}"  # the ocpp library routes by function name
-    return on(Action(name))(handler)
+    return on(actions(name))(handler)
 
 
 for _name in CP_INITIATED:
     setattr(MockChargePointHandler, f"on_{_snake(_name)}", _make_handler(_name))
+for _name in CP_INITIATED_16:
+    setattr(MockChargePointHandler16, f"on_{_snake(_name)}", _make_handler(_name, result16, Action16))
 
 
 class _Adapter:
@@ -75,15 +93,19 @@ class _Adapter:
 
 class MockCsms:
     def __init__(self, host: str = "127.0.0.1", port: int = 0, *, passwords: dict[str, str] | None = None,
-                 allowed_tokens: set[str] | None = None, boot_status: str = "Accepted", interval: int = 30) -> None:
+                 allowed_tokens: set[str] | None = None, boot_status: str = "Accepted", interval: int = 30,
+                 versions: tuple[str, ...] = ("2.0.1", "1.6"), answer_with: str | None = None) -> None:
         self.host, self.port = host, port
         self.passwords = passwords or {}  # station id -> Basic-auth password; empty = no authentication
         self.allowed_tokens = allowed_tokens  # None = every token is accepted
         self.boot_status = boot_status
         self.interval = interval
+        self.versions = versions  # which OCPP versions this CSMS speaks; a station offering none of them is refused
+        self._tx_ids = 0
+        self.answer_with = answer_with  # a non-compliant CSMS: always answers with this subprotocol, even if the charger did not offer it
         self.delay = 0.0
         self.refuse: set[str] = set()  # actions to answer with a CALLERROR (via reply())
-        self.connections: dict[str, MockChargePointHandler] = {}
+        self.connections: dict[str, MockChargePointHandler | MockChargePointHandler16] = {}
         self.received: list[dict] = []
         self.connect_log: list[tuple[str, str]] = []
         self._server = None
@@ -95,6 +117,9 @@ class MockCsms:
 
     def reply(self, cp_id: str, action: str, payload: dict) -> dict:
         now = _now()
+        cp = self.connections.get(cp_id)
+        if cp is not None and cp.version == "1.6":
+            return self.reply16(action, payload, now)
         if action == "BootNotification":
             return {"current_time": now, "interval": self.interval, "status": self.boot_status}
         if action == "Heartbeat":
@@ -119,9 +144,28 @@ class MockCsms:
             return {"status": "Accepted", "data": payload.get("data")}
         return {}
 
+    def reply16(self, action: str, payload: dict, now: str) -> dict:
+        if action == "BootNotification":
+            return {"current_time": now, "interval": self.interval, "status": self.boot_status}
+        if action == "Heartbeat":
+            return {"current_time": now}
+        if action in ("Authorize", "StartTransaction"):
+            ok = self.allowed_tokens is None or payload["id_tag"] in self.allowed_tokens
+            info = {"id_tag_info": {"status": "Accepted" if ok else "Invalid"}}
+            if action == "StartTransaction":
+                self._tx_ids += 1
+                return {"transaction_id": self._tx_ids, **info}
+            return info
+        if action == "StopTransaction":
+            return {"id_tag_info": {"status": "Accepted"}}
+        if action == "DataTransfer":
+            return {"status": "Accepted", "data": payload.get("data")}
+        return {}
+
     # ---- lifecycle ------------------------------------------------------------------------------
     async def start(self) -> None:
-        self._server = await serve(self._handle, self.host, self.port, subprotocols=["ocpp2.0.1"], process_request=self._auth, ping_interval=None)
+        self._server = await serve(self._handle, self.host, self.port, subprotocols=[f"ocpp{v}" for v in self.versions], process_request=self._auth, ping_interval=None,
+                                  select_subprotocol=(lambda conn, offered: self.answer_with) if self.answer_with else None)
         self.port = self._server.sockets[0].getsockname()[1]
 
     async def stop(self) -> None:
@@ -153,10 +197,10 @@ class MockCsms:
 
     async def _handle(self, ws) -> None:
         cp_id = ws.request.path.rstrip("/").rsplit("/", 1)[-1]
-        if ws.subprotocol != "ocpp2.0.1":
+        if ws.subprotocol not in [f"ocpp{v}" for v in self.versions]:
             await ws.close(1002)
             return
-        cp = MockChargePointHandler(cp_id, _Adapter(ws))
+        cp = (MockChargePointHandler16 if ws.subprotocol == "ocpp1.6" else MockChargePointHandler)(cp_id, _Adapter(ws))
         cp.csms = self
         previous = self.connections.get(cp_id)
         self.connections[cp_id] = cp
@@ -192,7 +236,7 @@ class MockCsms:
         cp = self.connections.get(cp_id)
         if cp is None:
             raise ConnectionError(f"{cp_id} is not connected")
-        message = getattr(call, action)(**camel_to_snake_case(payload or {}))
+        message = getattr(call16 if cp.version == "1.6" else call, action)(**camel_to_snake_case(payload or {}))
         response = await asyncio.wait_for(cp.call(message, suppress=False), timeout)
         return remove_nones(snake_to_camel_case(serialize_as_dict(response)))
 
@@ -200,12 +244,13 @@ class MockCsms:
 async def _main() -> None:  # pragma: no cover
     import argparse
 
-    ap = argparse.ArgumentParser(description="Permissive OCPP 2.0.1 CSMS for testing the simulator")
+    ap = argparse.ArgumentParser(description="Permissive OCPP 2.0.1 / 1.6 CSMS for testing the simulator")
     ap.add_argument("--port", type=int, default=9000)
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--versions", default="2.0.1,1.6", help="OCPP versions to speak, e.g. 2.0.1 or 1.6")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO)
-    csms = MockCsms(args.host, args.port)
+    csms = MockCsms(args.host, args.port, versions=tuple(args.versions.split(",")))
     await csms.start()
     print(f"Mock CSMS listening on {csms.url}/<station id>")
     await asyncio.Event().wait()

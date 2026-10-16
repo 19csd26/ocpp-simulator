@@ -99,3 +99,46 @@ def command_template(action: str, st) -> dict:
         "UpdateFirmware": {"requestId": 1, "firmware": {"location": "https://fw.example.com/fw-2.0.0.bin", "retrieveDateTime": now}},
     }
     return table[action]
+
+
+# ---------------------------------------------------------------------------------------------------------- OCPP 1.6
+def message_template16(action: str, st) -> dict:
+    """Payload for a message a 1.6 charge point sends to the CSMS."""
+    now = st.ts()
+    tx_ids = [n for n in st.tx16.values()]
+    table = {
+        "Authorize": {"idTag": "CARD1"},
+        "BootNotification": {"chargePointVendor": st.cfg.vendor, "chargePointModel": st.cfg.model, "chargePointSerialNumber": st.cfg.serial_number,
+                             "firmwareVersion": st.cfg.firmware_version},
+        "DataTransfer": {"vendorId": "com.simulator", "messageId": "hello", "data": "hi"},
+        "DiagnosticsStatusNotification": {"status": "Uploaded"},
+        "FirmwareStatusNotification": {"status": "Installed"},
+        "Heartbeat": {},
+        "MeterValues": {"connectorId": 1, **({"transactionId": tx_ids[0]} if tx_ids else {}),
+                        "meterValue": [{"timestamp": now, "sampledValue": [{"value": "1234.5", "context": "Sample.Periodic", "measurand": "Energy.Active.Import.Register",
+                                                                          "unit": "Wh"}]}]},
+        "StartTransaction": {"connectorId": 1, "idTag": "CARD1", "meterStart": int(st.evses[0].register_wh), "timestamp": now},
+        "StatusNotification": {"connectorId": 1, "errorCode": "NoError", "status": "Available", "timestamp": now},
+        "StopTransaction": {"transactionId": tx_ids[0] if tx_ids else 1, "meterStop": int(st.evses[0].register_wh), "timestamp": now, "reason": "Local"},
+    }
+    return table[action]
+
+
+def command_template16(action: str, st) -> dict:
+    """A valid payload for each of the 19 commands a 1.6 CSMS can send."""
+    now = st.ts()
+    profile = {"chargingProfileId": 1, "stackLevel": 0, "chargingProfilePurpose": "TxDefaultProfile", "chargingProfileKind": "Absolute",
+               "chargingSchedule": {"chargingRateUnit": "A", "startSchedule": now, "chargingSchedulePeriod": [{"startPeriod": 0, "limit": 16}]}}
+    table = {
+        "CancelReservation": {"reservationId": 1}, "ChangeAvailability": {"connectorId": 1, "type": "Operative"},
+        "ChangeConfiguration": {"key": "HeartbeatInterval", "value": "30"}, "ClearCache": {}, "ClearChargingProfile": {"id": 1},
+        "DataTransfer": {"vendorId": "com.simulator.echo", "data": "hi"}, "GetCompositeSchedule": {"connectorId": 1, "duration": 600},
+        "GetConfiguration": {}, "GetDiagnostics": {"location": "ftp://example.com/logs"}, "GetLocalListVersion": {},
+        "RemoteStartTransaction": {"idTag": "CARD1", "connectorId": 1}, "RemoteStopTransaction": {"transactionId": 1},
+        "ReserveNow": {"connectorId": 1, "expiryDate": (st.now() + timedelta(hours=1)).isoformat(), "idTag": "CARD1", "reservationId": 1},
+        "Reset": {"type": "Soft"},
+        "SendLocalList": {"listVersion": 1, "updateType": "Full", "localAuthorizationList": [{"idTag": "CARD1", "idTagInfo": {"status": "Accepted"}}]},
+        "SetChargingProfile": {"connectorId": 1, "csChargingProfiles": profile}, "TriggerMessage": {"requestedMessage": "StatusNotification"},
+        "UnlockConnector": {"connectorId": 1}, "UpdateFirmware": {"location": "http://example.com/firmware.bin", "retrieveDate": now},
+    }
+    return table[action]

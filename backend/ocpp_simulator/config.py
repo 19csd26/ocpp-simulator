@@ -41,6 +41,7 @@ class StationConfig(BaseModel):
     csms_url: str = "ws://localhost:8000/ocpp"  # base URL; the station id is appended
     password: str | None = None  # HTTP Basic password (security profile 1 and 2)
     security_profile: Literal[0, 1, 2, 3] = 1
+    ocpp_version: Literal["auto", "2.0.1", "1.6"] = "2.0.1"  # auto: offer both subprotocols and use whichever the CSMS picks
     verify_tls: bool = True
     ca_file: str | None = None
     client_cert: str | None = None  # security profile 3 (mutual TLS)
