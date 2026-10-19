@@ -1,5 +1,6 @@
 """The HTTP / WebSocket API used by the UI, driven through a real server and the mock CSMS."""
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -241,3 +242,59 @@ async def test_edit_validation_and_hardware_guards(api, csms):
     r = await api.patch(f"/api/stations/{a}", json={"preset": "ac_7"})
     assert r.status_code == 409 and "Unplug" in r.json()["detail"]
     assert (await api.patch(f"/api/stations/{a}", json={"name": "still fine"})).status_code == 200
+
+
+# --------------------------------------------------------------------------------------------- new endpoints
+async def test_signature_about_and_response_header(api):
+    r = await api.get("/api/about")
+    assert r.status_code == 200 and r.json()["owner"] == "Raghav" and r.json()["github"] == "19csd26" and "All rights reserved" in r.json()["copyright"]
+    meta = (await api.get("/api/meta")).json()
+    assert meta["about"]["signature"] == r.json()["signature"] and set(meta["versions"]) == {"1.6", "2.0.1"}
+    assert (len(meta["versions"]["2.0.1"]["station_messages"]), len(meta["versions"]["2.0.1"]["commands"])) == (25, 40)
+    assert (len(meta["versions"]["1.6"]["station_messages"]), len(meta["versions"]["1.6"]["commands"])) == (10, 19)
+    assert r.headers["x-created-by"] == r.json()["signature"]
+
+
+async def test_new_station_endpoints_over_http(api, csms):
+    created = await api.post("/api/stations", json=new_station(csms, ocpp_version="auto", vendor="Acme", model="M1", serial_number="SER9", iccid="89001", imsi="40401",
+                                                               auto_charge=True, vehicle_id="VID:HTTP", smart_plug=False, finishing_mode=False, preset="dc_150"))
+    assert created.status_code == 201, created.text
+    snap = created.json()
+    sid = snap["id"]
+    assert snap["config"]["vendor"] == "Acme" and snap["config"]["serial_number"] == "SER9" and snap["config"]["auto_charge"] is True
+    assert snap["config"]["vehicle_id"] == "VID:HTTP" and snap["config"]["finishing_mode"] is False and snap["config"]["ocpp_version"] == "auto"
+    await wait_until(lambda: "API1" in csms.connections, message="connected")
+    assert (await csms.wait_for("BootNotification", cp_id="API1"))[0]["charging_station"]["vendor_name"] == "Acme"
+    st = (await api.get(f"/api/stations/{sid}")).json()
+    assert st["version"] == "2.0.1" and st["negotiated"] == "2.0.1"  # auto recognises 1.6 / 2.0.1 and prefers 2.0.1
+    # behaviour switches change live, identity does not
+    assert (await api.patch(f"/api/stations/{sid}", json={"auto_charge": False, "finishing_mode": True})).status_code == 200
+    assert (await api.patch(f"/api/stations/{sid}", json={"vendor": "Other"})).status_code == 409
+    assert (await api.patch(f"/api/stations/{sid}", json={"smart_plug": True})).status_code == 409
+
+    assert (await api.post(f"/api/stations/{sid}/local-list", json={"token": "TOK1"})).status_code == 201
+    assert [e["token"] for e in (await api.get(f"/api/stations/{sid}")).json()["local_list"]["entries"]] == ["TOK1"]
+    assert (await api.delete(f"/api/stations/{sid}/local-list/TOK1")).status_code == 200
+    assert (await api.delete(f"/api/stations/{sid}/local-list/NOPE")).status_code == 422
+
+    assert (await api.post(f"/api/stations/{sid}/evse/1/meter", json={"import_kwh": 321.5})).status_code == 200
+    assert (await api.get(f"/api/stations/{sid}")).json()["evses"][0]["register_kwh"] == 321.5
+    assert (await api.post(f"/api/stations/{sid}/evse/1/v2x", json={"mode": "discharge", "power_kw": 5})).status_code == 422  # no session yet
+    assert (await api.post(f"/api/stations/{sid}/evse/1/plug-in", json={"ev": "large"})).status_code == 200
+    assert (await api.post(f"/api/stations/{sid}/evse/1/tap", json={"token": "CARD1", "type": "eMAID"})).json()["status"] == "Accepted"
+    await wait_until(lambda: csms.messages("TransactionEvent", "API1"), message="session")
+    assert (await api.post(f"/api/stations/{sid}/evse/1/v2x", json={"mode": "discharge", "power_kw": 5})).json()["mode"] == "discharge"
+    assert (await api.post(f"/api/stations/{sid}/evse/1/v2x", json={"mode": "charge"})).json()["mode"] == "charge"
+
+    sim = await api.post(f"/api/stations/{sid}/inject", json={"action": "GetLocalListVersion", "payload": {}})
+    assert sim.status_code == 200 and "versionNumber" in sim.json()
+    assert (await api.post(f"/api/stations/{sid}/inject", json={"action": "GetConfiguration", "payload": {}})).status_code == 422  # a 1.6 command
+    assert (await api.post(f"/api/stations/{sid}/inject", json={"action": "BootNotification", "payload": {}})).status_code == 422
+    template = (await api.get(f"/api/stations/{sid}/templates/RequestStartTransaction", params={"kind": "command"})).json()
+    assert "idToken" in template and (await api.get(f"/api/stations/{sid}/templates/NotifyEvent")).json()["eventData"]
+
+    assert (await api.post(f"/api/stations/{sid}/raw", json={"frame": json.dumps([2, "r1", "Heartbeat", {}])})).status_code == 200
+    await csms.wait_for("Heartbeat", cp_id="API1")
+    assert (await api.post(f"/api/stations/{sid}/reboot", json={"reason": "Nope"})).status_code == 422
+    assert (await api.post(f"/api/stations/{sid}/reboot", json={"reason": "LocalReset"})).json()["reason"] == "LocalReset"
+    await csms.wait_for("BootNotification", cp_id="API1", count=2, timeout=20)

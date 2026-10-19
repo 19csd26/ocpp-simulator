@@ -11,6 +11,7 @@ from ocpp_simulator.config import EV_MODELS, EvseSpec
 
 log = logging.getLogger("charging")
 
+DISCHARGE_FLOOR_SOC = 10.0  # a vehicle stops feeding the grid at 10 % battery
 STOP_REASONS = {"DeAuthorized", "EmergencyStop", "EnergyLimitReached", "EVDisconnected", "GroundFault", "ImmediateReset", "Local",
                 "LocalOutOfCredit", "MasterPass", "Other", "OvercurrentFault", "PowerLoss", "PowerQuality", "Reboot", "Remote",
                 "SOCLimitReached", "StoppedByEV", "TimeLimitReached", "Timeout"}
@@ -23,12 +24,14 @@ class EvState:
     capacity_kwh: float
     max_ac_kw: float
     max_dc_kw: float
+    max_discharge_kw: float = 0.0  # > 0: bidirectional vehicle (V2G / V2H)
     soc: float = 20.0
     target_soc: float = 100.0
     ready: bool = True  # the vehicle accepts energy (False = paused / battery management stop)
 
     def public(self) -> dict:
-        return {"key": self.key, "label": self.label, "capacity_kwh": self.capacity_kwh, "soc": round(self.soc, 1), "target_soc": self.target_soc, "ready": self.ready}
+        return {"key": self.key, "label": self.label, "capacity_kwh": self.capacity_kwh, "soc": round(self.soc, 1), "target_soc": self.target_soc, "ready": self.ready,
+                "bidirectional": self.max_discharge_kw > 0, "max_discharge_kw": self.max_discharge_kw}
 
 
 @dataclass
@@ -47,6 +50,7 @@ class Tx:
     since_sample: float = 0.0
     time_charging_s: float = 0.0
     total_cost: float | None = None
+    export_wh: float = 0.0  # energy this session fed back to the grid (V2G)
     power_lost_at: datetime | None = None
     ended: bool = False
 
@@ -79,6 +83,10 @@ class Evse:
         self.power_w = 0.0
         self.limit_w = 0.0
         self.temperature = 30.0
+        self.export_register_wh = 50_000.0 + eid * 500  # lifetime energy fed back to the grid
+        self.v2x = "charge"  # charge | discharge: the direction the user asked for (bidirectional charging)
+        self.discharge_w = 0.0  # the power requested for discharging
+        self.export_power_w = 0.0  # what is flowing back right now
         self.lock = asyncio.Lock()
 
 
@@ -121,9 +129,9 @@ class ChargingMixin:
             return "Faulted"
         if not (self.operative and evse.operative and conn.operative):
             return "Unavailable"
-        if evse.tx is not None or evse.plugged is conn:
+        if evse.tx is not None or (evse.plugged is conn and not self.cfg.smart_plug):
             return "Occupied"
-        if evse.plugged is not None:
+        if evse.plugged is not None and not self.cfg.smart_plug:
             return "Unavailable"  # another connector of the same EVSE is in use
         if any(r["evse_id"] in (evse.id, None) and r["expiry"] > self.now() for r in self.reservations.values()):
             return "Reserved"
@@ -209,6 +217,18 @@ class ChargingMixin:
             value, unit = v, "V"
         elif measurand == "Frequency":
             value, unit, location = 50.0, "Hz", "Outlet"
+        elif measurand == "Energy.Active.Export.Register":
+            value, unit = evse.export_register_wh, "Wh"
+        elif measurand == "Power.Active.Export":
+            value, unit = evse.export_power_w, "W"
+        elif measurand == "Current.Export":
+            value, unit = (evse.export_power_w / (v * phases)) if v else 0, "A"
+        elif measurand == "Temperature":
+            if not self.v16:
+                return None  # OCPP 1.6 only: in 2.0.1 the temperature is a device-model variable, not a measurand
+            value, unit, location = evse.temperature, "Celsius", "Body"
+        elif measurand == "Power.Factor":
+            value, unit = 1.0, None
         elif measurand == "SoC":
             if evse.ev is None:
                 return None
@@ -217,7 +237,10 @@ class ChargingMixin:
             return None
         if value is None:
             return None
-        return {"value": round(float(value), 3), "context": context, "measurand": measurand, "location": location, "unit_of_measure": {"unit": unit}}
+        sample = {"value": round(float(value), 3), "context": context, "measurand": measurand, "location": location}
+        if unit:
+            sample["unit_of_measure"] = {"unit": unit}
+        return sample
 
     def meter_values(self, evse: Evse, tx: Tx | None, controller: str, variable: str, context: str) -> list[dict]:
         sampled = [s for m in self.model.get_list(controller, variable) if (s := self._sample(evse, tx, m, context))]
@@ -244,12 +267,16 @@ class ChargingMixin:
             base *= max(0.15, (100 - ev.soc) / 20)  # DC charging tapers off near full
         return base * 1000
 
+    @staticmethod
+    def discharging(evse: Evse) -> bool:
+        return evse.v2x == "discharge" and evse.ev is not None and evse.ev.max_discharge_kw > 0 and evse.ev.soc > DISCHARGE_FLOOR_SOC
+
     def desired_state(self, evse: Evse) -> str:
         if evse.plugged is None:
             return "Idle"
         if evse.auth is None and (evse.tx is None or evse.tx.id_token is None):
             return "EVConnected"
-        if evse.ev is not None and (not evse.ev.ready or evse.ev.soc >= evse.ev.target_soc or not self.ev_comm_ok(evse)):
+        if evse.ev is not None and (not evse.ev.ready or (evse.ev.soc >= evse.ev.target_soc and not self.discharging(evse)) or not self.ev_comm_ok(evse)):
             return "SuspendedEV"
         if self.evse_faulted(evse) or not (self.operative and evse.operative) or self.contactor_failed(evse) or evse.limit_w <= 0:
             return "SuspendedEVSE"
@@ -328,6 +355,8 @@ class ChargingMixin:
             self.note(f"EVSE {evse_id}: vehicle connected ({EV_MODELS[ev]['label']}, SoC {evse.ev.soc:.0f}%)")
             await self.sync_status()
             await self._on_plugged(evse)
+        if self.cfg.auto_charge and not self.cfg.smart_plug:
+            self.spawn(self._auto_charge(evse_id))
         return {"ok": True}
 
     async def _on_plugged(self, evse: Evse) -> None:
@@ -465,7 +494,7 @@ class ChargingMixin:
         elif hint == "ChargingRateChanged" and evse.reported_limit_w is not None and abs(evse.limit_w - evse.reported_limit_w) > 1:
             evse.reported_limit_w = evse.limit_w
             await self.tx_event(evse.tx, "Updated", "ChargingRateChanged", charging_state=new)
-        if evse.tx is not None and evse.ev is not None and evse.ev.soc >= evse.ev.target_soc and self.cfg.end_on_full:
+        if evse.tx is not None and evse.ev is not None and evse.ev.soc >= evse.ev.target_soc and self.cfg.end_on_full and not self.discharging(evse):
             # the vehicle is full: it ends the session itself (however it got full)
             await self._end_tx(evse, "StoppedByEV", "ChargingStateChanged")
             await self.sync_status()
@@ -486,6 +515,8 @@ class ChargingMixin:
                     sv["value"] = round(energy_wh, 3)
         tx.ended = True
         evse.tx = None
+        if self.cfg.smart_plug:
+            self.smart_plug_off(evse)
         evse.finishing = evse.plugged is not None  # OCPP 1.6: the connector is "Finishing" until the cable is unplugged
         evse.auth = None
         evse.auth_at = None
@@ -566,7 +597,21 @@ class ChargingMixin:
         tx = evse.tx
         evse.limit_w = self.power_limit_w(evse, tx)
         evse.temperature = self.temperature_of(evse)
-        if tx is not None and tx.charging_state == "Charging" and evse.ev is not None:
+        evse.export_power_w = 0.0
+        if tx is not None and tx.charging_state == "Charging" and evse.ev is not None and self.discharging(evse):
+            # vehicle-to-grid: energy flows from the battery to the grid, so the import power is zero and the export register grows
+            watts = min(evse.discharge_w or float("inf"), evse.ev.max_discharge_kw * 1000, evse.spec.max_power_kw * 1000)
+            wh = watts * scaled / 3600
+            evse.power_w = 0.0
+            evse.export_power_w = watts
+            evse.export_register_wh += wh
+            tx.export_wh += wh
+            tx.time_charging_s += dt
+            evse.ev.soc = max(0.0, evse.ev.soc - wh / (evse.ev.capacity_kwh * 1000) * 100)
+            if evse.ev.soc <= DISCHARGE_FLOOR_SOC:
+                evse.v2x = "charge"  # the vehicle protects its battery: back to charging
+                self.note(f"EVSE {evse.id}: battery at {DISCHARGE_FLOOR_SOC:.0f}%, discharging stopped")
+        elif tx is not None and tx.charging_state == "Charging" and evse.ev is not None:
             watts = min(evse.limit_w, self.ev_power_w(evse.ev, evse.spec))
             evse.power_w = watts
             wh = watts * scaled / 3600
@@ -665,6 +710,8 @@ class ChargingMixin:
                 "id": evse.id, "current_type": evse.spec.current_type, "max_power_kw": evse.spec.max_power_kw, "voltage": evse.spec.voltage,
                 "phases": evse.spec.phases, "operative": evse.operative, "locked": evse.locked, "power_kw": round(evse.power_w / 1000, 2),
                 "limit_kw": round(evse.limit_w / 1000, 2), "register_kwh": round(evse.register_wh / 1000, 3), "temperature": round(evse.temperature, 1),
+                "export_register_kwh": round(evse.export_register_wh / 1000, 3), "export_power_kw": round(evse.export_power_w / 1000, 2), "v2x": evse.v2x,
+                "voltage": round(self.voltage_now(evse), 1), "current_a": round(evse.power_w / max(1.0, self.voltage_now(evse) * (evse.spec.phases if evse.spec.current_type == "AC" else 1)), 1),
                 "plugged_connector": evse.plugged.id if evse.plugged else None, "authorized": evse.auth["id_token"] if evse.auth else None,
                 "faulted": self.evse_faulted(evse), "remote_pending": evse.pending_remote is not None,
                 "ev": evse.ev.public() if evse.ev else None,
@@ -672,7 +719,7 @@ class ChargingMixin:
                 "reservation": self._res_public(self.reservation_for(evse)),
                 "tx": None if tx is None else {
                     "id": tx.id, "connector_id": tx.connector_id, "started_at": tx.started_at.isoformat(), "charging_state": tx.charging_state,
-                    "energy_kwh": round(tx.energy_wh / 1000, 3), "id_token": tx.id_token["id_token"] if tx.id_token else None, "seq_no": tx.seq_no,
+                    "energy_kwh": round(tx.energy_wh / 1000, 3), "export_kwh": round(tx.export_wh / 1000, 3), "id_token": tx.id_token["id_token"] if tx.id_token else None, "seq_no": tx.seq_no,
                     "duration_s": int((self.now() - tx.started_at).total_seconds()), "total_cost": tx.total_cost, "remote_start_id": tx.remote_start_id,
                     "ocpp_id": self.tx16.get(tx.id),
                 },

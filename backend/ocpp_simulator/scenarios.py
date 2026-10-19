@@ -75,6 +75,7 @@ class Runner:
         self.task: asyncio.Task | None = None
         self.history: list[Run] = []
         self.ctx: dict = {}
+        self.restore: dict = {}  # settings a scenario changed temporarily, put back when it ends
         self.start_log_id = 0
 
     @property
@@ -153,6 +154,9 @@ class Runner:
                     s.status = "skipped"
             raise
         finally:
+            for key, value in self.restore.items():
+                setattr(self.st.cfg, key, value)
+            self.restore = {}
             run.finished = time.time()
             self.history.append(run)
             self.history = self.history[-20:]
@@ -194,6 +198,29 @@ class Runner:
             raise AssertionError(f"no active '{target}' fault to clear")
         return f"cleared {cleared}"
 
+    CONFIG_KEYS = {"auto_charge": bool, "smart_plug": bool, "finishing_mode": bool}
+
+    async def a_config(self, s):
+        """Change a station setting for the length of this scenario (auto_charge, smart_plug, finishing_mode)."""
+        key = s["key"]
+        if key not in self.CONFIG_KEYS:
+            raise ValueError(f"Cannot change '{key}' from a scenario. Known: {sorted(self.CONFIG_KEYS)}")
+        self.restore.setdefault(key, getattr(self.st.cfg, key))
+        setattr(self.st.cfg, key, bool(s.get("value", True)))
+        return f"{key} = {bool(s.get('value', True))} until the scenario ends"
+
+    async def a_v2x(self, s):
+        await self.st.set_v2x(s.get("evse", 1), s.get("mode", "discharge"), s.get("power_kw"))
+        return f"{s.get('mode', 'discharge')}" + (f" at {s['power_kw']} kW" if s.get("power_kw") else "")
+
+    async def a_reboot(self, s):
+        await self.st.reboot_with(s.get("reason", "PowerUp"))
+
+    async def a_simulate(self, s):
+        """Run a CSMS command locally, as if the CSMS had sent it."""
+        body = await self.st.simulate_command(s["action"], s.get("payload", {}))
+        return f"{s['action']} → {body.get('status', 'ok')}"
+
     async def a_reset(self, s):
         """Leave nothing behind from an earlier run: clear every fault and unplug every vehicle."""
         faults = await self.st.clear_all_faults()
@@ -225,7 +252,7 @@ class Runner:
         return await self._poll(lambda: self._find_message(s), s.get("timeout", 60), f"message {s.get('action')} ({s.get('dir', 'in')})")
 
     ACTIONS = {"connect": a_connect, "disconnect": a_disconnect, "plug_in": a_plug_in, "unplug": a_unplug, "tap": a_tap, "stop": a_stop, "inject": a_inject,
-               "clear": a_clear, "reset": a_reset, "send": a_send, "set_variable": a_set_variable, "set_ev": a_set_ev, "wait": a_wait, "wait_message": a_wait_message}
+               "clear": a_clear, "reset": a_reset, "config": a_config, "v2x": a_v2x, "reboot": a_reboot, "simulate": a_simulate, "send": a_send, "set_variable": a_set_variable, "set_ev": a_set_ev, "wait": a_wait, "wait_message": a_wait_message}
 
     # -------------------------------------------------------------------------------- expectations
     def _find_message(self, s: dict) -> str | None:
@@ -270,6 +297,10 @@ class Runner:
         want = s["state"]
         return (tx is None) if want == "none" else (tx is not None and tx.charging_state == want)
 
+    def e_export_gt(self, s):
+        tx = self.st.evse(s.get("evse", 1)).tx
+        return tx is not None and tx.export_wh > s.get("wh", 0)
+
     def e_energy_gt(self, s):
         tx = self.st.evse(s.get("evse", 1)).tx
         return tx is not None and tx.energy_wh > s.get("wh", 0)
@@ -305,7 +336,7 @@ class Runner:
     def e_queue_empty(self, s):
         return not self.st.tx_queue
 
-    EXPECTS = {"online": e_online, "connector_status": e_connector_status, "tx_state": e_tx_state, "energy_gt": e_energy_gt, "message_sent": e_message_sent,
+    EXPECTS = {"online": e_online, "connector_status": e_connector_status, "tx_state": e_tx_state, "energy_gt": e_energy_gt, "export_gt": e_export_gt, "message_sent": e_message_sent,
                "message_received": e_message_received, "response": e_response, "send_ok": e_send_ok, "tap_status": e_tap_status, "faulted": e_faulted,
                "queue_gte": e_queue_gte, "queue_empty": e_queue_empty}
 
@@ -447,6 +478,28 @@ def build_catalog() -> dict[str, dict]:
     add("grid_overload", "Grid overload (energy management limit)", "Smart charging", "An external limit caps the site at 4 kW for 20 s: NotifyChargingLimit then ClearedChargingLimit.",
         [*_session_start(), {"do": "inject", "fault": "grid_overload", "params": {"limit_kw": 4, "duration_s": 20}},
          {"expect": "message_sent", "action": "NotifyChargingLimit", "timeout": 15, "only": "2.0.1"}, {"expect": "message_sent", "action": "ClearedChargingLimit", "timeout": 40, "only": "2.0.1"}, {"do": "tap"}, {"do": "unplug"}])
+
+    add("v2g_discharge", "Vehicle-to-grid discharge", "Bidirectional charging",
+        "A bidirectional vehicle charges, then feeds 5 kW back to the grid: the export register and the session's export energy grow, "
+        "and the vehicle's battery goes down. (Bidirectional vehicles: the mid-size and large EV.)",
+        [{"do": "set_variable", "component": "SampledDataCtrlr", "variable": "TxUpdatedMeasurands",
+          "value": "Energy.Active.Import.Register,Energy.Active.Export.Register,Power.Active.Import,Power.Active.Export,SoC", "label": "Report the export register too"},
+         *_session_start(ev="large", soc=80), {"do": "v2x", "mode": "discharge", "power_kw": 5, "label": "Start feeding 5 kW back"},
+         {"expect": "export_gt", "wh": 5, "timeout": 20, "label": "Export energy is flowing"}, {"do": "wait", "seconds": 3},
+         {"do": "v2x", "mode": "charge", "label": "Back to charging"}, {"expect": "tx_state", "state": "Charging", "timeout": 10},
+         {"do": "stop"}, {"do": "unplug"}])
+    add("auto_charge", "Auto charge (the vehicle identifies itself)", "Authorization",
+        "No card is tapped: the vehicle presents its own id (VID) as soon as it is plugged in and the session starts. Fails if the CSMS refuses that id.",
+        [{"do": "config", "key": "auto_charge", "value": True}, {"do": "plug_in", "ev": "large"},
+         {"expect": "tx_state", "state": "Charging", "timeout": 20, "label": "Charging starts without a card"}, {"do": "stop"}, {"do": "unplug"}])
+    add("smart_plug_remote_start", "Smart plug: remote start without a cable", "Authorization",
+        "A smart plug has no cable detection: the connector stays Available until a remote start, goes straight to Charging, and is Available again after the stop. "
+        "The remote start is simulated here, as if the CSMS had sent it.",
+        [{"do": "config", "key": "smart_plug", "value": True}, {"expect": "connector_status", "status": "Available", "timeout": 10, "label": "Connector is Available"},
+         {"do": "simulate", "action": "RequestStartTransaction", "payload": {"idToken": {"idToken": "REMOTE1", "type": "Central"}, "remoteStartId": 1, "evseId": 1},
+          "v16": {"action": "RemoteStartTransaction", "payload": {"idTag": "REMOTE1", "connectorId": 1}}},
+         {"expect": "tx_state", "state": "Charging", "timeout": 20, "label": "Charging starts from the remote start alone"},
+         {"do": "stop"}, {"expect": "connector_status", "status": "Available", "timeout": 15, "label": "Back to Available"}])
 
     messages = ["Authorize", "BootNotification", "ClearedChargingLimit", "DataTransfer", "FirmwareStatusNotification", "Get15118EVCertificate", "GetCertificateStatus",
                 "Heartbeat", "LogStatusNotification", "MeterValues", "NotifyChargingLimit", "NotifyCustomerInformation", "NotifyDisplayMessages", "NotifyEVChargingNeeds",

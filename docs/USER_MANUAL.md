@@ -1,4 +1,4 @@
-# User manual
+# Volkai: user manual
 
 ## 1. Starting
 
@@ -22,7 +22,7 @@ Click **Add charger**.
 | Display name | Optional label |
 | Hardware | A preset or **Custom** (edit EVSEs and connectors: current type AC/DC, power, connector types) |
 | Charging speed-up | Multiplies energy and battery progress only; protocol timers stay real |
-| OCPP version | **Auto** offers `ocpp2.0.1` and `ocpp1.6` and uses whichever your CSMS accepts (the header shows which). **2.0.1** or **1.6** offers only that one. |
+| OCPP version | **Auto** recognises 1.6 or 2.0.1: it offers `ocpp2.0.1` and `ocpp1.6` and uses whichever your CSMS accepts (the header shows which). **2.0.1** or **1.6** offers only that one. |
 | Connect immediately | Starts the connection straight away |
 
 When the CSMS accepts `BootNotification`, every connector is reported `Available`. The header shows
@@ -67,6 +67,27 @@ Messages that exist only in 2.0.1 (device model reports, display messages, monit
 `SecurityEventNotification`, ...) are quietly not sent on a 1.6 charger. The **Messages** tab lists the 10 messages a 1.6 charger can send.
 Offline behaviour is the same: events queue and are delivered in order after reconnecting, and a session that started offline gets its transaction id then.
 
+## 2c. Features for testing a CSMS
+
+| Feature | Where | What it does |
+|---|---|---|
+| **Auto charge** | Add / Edit charger | The vehicle presents its own id (default `VID:FCA47A10DC70`, max 20 characters) half a second after it is plugged in, so no card is tapped. The CSMS must accept that id. |
+| **Smart plug** | Add / Edit charger (disconnected) | No cable detection: the connector stays Available until a remote start, goes straight to Charging, and is Available again after the stop. Needs a remote start (use *Simulate a command* below if you have no CSMS). |
+| **Finishing mode** | Add / Edit charger | OCPP 1.6: after a session the connector shows Finishing until the cable is pulled (off: Preparing). |
+| **V2G (bidirectional)** | Connectors tab, during a session | For the mid-size and large EV: *Discharge (V2G)* feeds a chosen kW back, the battery goes down (stops at 10 %), the export register grows and `Energy.Active.Export.Register` / `Power.Active.Export` can be reported. *Charge (G2V)* returns to normal. |
+| **Meter register** | Connectors tab, each EVSE | Type a kWh value and *Set*: the next readings continue from it. Use it to see how the CSMS handles a jump, a rollback or a reset. |
+| **Token type** | Connectors tab, next to the card id | ISO14443, ISO15693, eMAID, Central, Local or NoAuthorization (2.x). |
+| **Reboot with a reason** | Connectors tab, top row | Reboots and sends the chosen boot reason (PowerUp, Watchdog, RemoteReset, ScheduledReset, FirmwareUpdate, ...). |
+| **Local authorization list** | State tab | Add and remove tokens by hand; the list version goes up with every change. |
+| **Station display** | State tab | Shows the message your CSMS set with SetDisplayMessage (highest priority for the current state) or a default, plus the running session's energy, power and cost. |
+| **Simulate a command from the CSMS** | Messages tab | Runs any CSMS command on the charger exactly as if your CSMS had sent it, with no CSMS needed. It is marked "simulated" in the log. |
+| **Raw frame** | Messages tab | Sends any text on the WebSocket as is (a CALL, a CALLRESULT, a CALLERROR, malformed JSON) to test the CSMS's error handling. |
+| **Saved CSMS addresses** | Add charger | *Save this address* names a URL (for example "dev server"); pick it later from the list. They are kept in this browser. |
+| **Charger identity** | Add / Edit charger, *Charger identity* | Vendor, model, firmware, serial numbers, ICCID, IMSI (and, for 1.6, charge box serial, meter type and serial) sent in BootNotification. |
+
+Measurands you can switch on (Device model: `SampledDataCtrlr.TxUpdatedMeasurands`, or the 1.6 key `MeterValuesSampledData`) now also include `Temperature` (OCPP 1.6 only: in 2.0.1 it is not a measurand),
+`Power.Factor`, `Energy.Active.Export.Register`, `Power.Active.Export` and `Current.Export`.
+
 ## 3. Connectors tab: running a session
 
 Each EVSE card shows its connector status, power, limit, session energy and temperature.
@@ -99,6 +120,8 @@ message. A run always starts by clearing faults and unplugging vehicles. Only on
 | Safety & electrical | emergency_stop, over_current, ground_fault, over_voltage, over_temperature, tamper |
 | Hardware / Vehicle | contactor_failure, reader_failure, ev_comm_loss, cable_pulled |
 | Smart charging | grid_overload |
+| Authorization | auto_charge, smart_plug_remote_start |
+| Bidirectional charging | v2g_discharge |
 | Protocol | all_messages (sends every station message once) |
 
 `remote_start_from_csms` is interactive: it waits (up to 180 s) for you to send the command from your CSMS.
@@ -186,3 +209,6 @@ the raw JSON. Search, filter by direction or message type, hide heartbeats, paus
 | Scenario step "timed out" | Expected behaviour did not occur; read the failed step's detail and the log |
 | "A scenario is already running" | Click **Stop** first |
 | UI shows backend disconnected | The simulator backend is not running on the expected port |
+
+---
+Volkai · designed and built by Raghav ([@19csd26](https://github.com/19csd26)) · Copyright © 2026 Raghav (19csd26). All rights reserved.

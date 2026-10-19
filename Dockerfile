@@ -7,6 +7,11 @@ COPY ui/ ./
 RUN npm run build
 
 FROM python:3.13-slim
+LABEL org.opencontainers.image.title="Volkai" \
+      org.opencontainers.image.description="Volkai: simulate any charger, break it on purpose. An OCPP 1.6J and 2.0.1 charge point simulator" \
+      org.opencontainers.image.authors="Raghav (19csd26)" \
+      org.opencontainers.image.source="https://github.com/19csd26/ocpp-simulator" \
+      org.opencontainers.image.licenses="All rights reserved"
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 COPY backend/requirements.txt backend/requirements.txt

@@ -105,7 +105,7 @@ class MockCsms:
         self.answer_with = answer_with  # a non-compliant CSMS: always answers with this subprotocol, even if the charger did not offer it
         self.delay = 0.0
         self.refuse: set[str] = set()  # actions to answer with a CALLERROR (via reply())
-        self.connections: dict[str, MockChargePointHandler | MockChargePointHandler16] = {}
+        self.connections: dict[str, MockChargePointHandler | MockChargePointHandler16 | MockChargePointHandler21] = {}
         self.received: list[dict] = []
         self.connect_log: list[tuple[str, str]] = []
         self._server = None
@@ -247,7 +247,7 @@ async def _main() -> None:  # pragma: no cover
     ap = argparse.ArgumentParser(description="Permissive OCPP 2.0.1 / 1.6 CSMS for testing the simulator")
     ap.add_argument("--port", type=int, default=9000)
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--versions", default="2.0.1,1.6", help="OCPP versions to speak, e.g. 2.0.1 or 1.6")
+    ap.add_argument("--versions", default="2.0.1,1.6", help="OCPP versions to speak, e.g. 1.6 or 2.0.1,1.6")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO)
     csms = MockCsms(args.host, args.port, versions=tuple(args.versions.split(",")))

@@ -221,7 +221,8 @@ def default_model(cfg: StationConfig) -> DeviceModel:
     m.add("OCPPCommCtrlr", "FileTransferProtocols", "HTTP,HTTPS,FTP", "MemberList", RO, values_list="HTTP,HTTPS,FTP,FTPS,SFTP")
     m.add("OCPPCommCtrlr", "NetworkConfigurationPriority", "0", "string")
     # --- SampledDataCtrlr / AlignedDataCtrlr
-    measurands = "Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage,SoC,Power.Offered,Current.Offered,Frequency"
+    measurands = ("Energy.Active.Import.Register,Energy.Active.Export.Register,Power.Active.Import,Power.Active.Export,Current.Import,Current.Export,"
+                 "Voltage,SoC,Power.Offered,Current.Offered,Frequency,Temperature,Power.Factor")
     m.add("SampledDataCtrlr", "Available", True, mutability=RO)
     m.add("SampledDataCtrlr", "Enabled", True)
     m.add("SampledDataCtrlr", "TxStartedMeasurands", "Energy.Active.Import.Register", "MemberList", values_list=measurands)

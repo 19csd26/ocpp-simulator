@@ -23,7 +23,9 @@ from ocpp_simulator.link import COMMAND_NAMES
 from ocpp_simulator.rules import ERROR_CODES, IN_EFFECTS, OUT_EFFECTS
 from ocpp_simulator.scenarios import CATALOG_SCENARIOS, Runner
 from ocpp_simulator.station import Station
+from ocpp_simulator.features import BOOT_REASONS
 from ocpp_simulator.v16 import COMMAND_NAMES_16, CP_ACTIONS_16
+from ocpp_simulator.about import ABOUT
 from ocpp_simulator.templates import command_template, command_template16, message_template, message_template16
 
 UI_DIST = Path(__file__).resolve().parent.parent.parent / "ui" / "dist"
@@ -42,9 +44,19 @@ class NewStation(BaseModel):
     vendor: str | None = None
     model: str | None = None
     firmware_version: str | None = None
+    serial_number: str | None = None
+    iccid: str | None = None
+    imsi: str | None = None
+    charge_box_serial_number: str | None = None
+    meter_type: str | None = None
+    meter_serial_number: str | None = None
     time_scale: float = Field(1.0, ge=1, le=600)
     boot_on_reconnect: bool = True
     end_on_full: bool = True
+    auto_charge: bool = False
+    vehicle_id: str | None = Field(None, max_length=20)
+    smart_plug: bool = False
+    finishing_mode: bool = True
     connect: bool = True
 
 
@@ -59,6 +71,19 @@ class StationPatch(BaseModel):
     security_profile: Literal[0, 1, 2, 3] | None = None
     ocpp_version: Literal["auto", "2.0.1", "1.6"] | None = None
     verify_tls: bool | None = None
+    vendor: str | None = None
+    model: str | None = None
+    firmware_version: str | None = None
+    serial_number: str | None = None
+    iccid: str | None = None
+    imsi: str | None = None
+    charge_box_serial_number: str | None = None
+    meter_type: str | None = None
+    meter_serial_number: str | None = None
+    auto_charge: bool | None = None
+    vehicle_id: str | None = Field(None, max_length=20)
+    smart_plug: bool | None = None
+    finishing_mode: bool | None = None
     preset: str | None = None
     evses: list[dict] | None = None  # custom hardware (overrides the preset)
 
@@ -73,6 +98,34 @@ class PlugIn(BaseModel):
 class Tap(BaseModel):
     token: str = Field(min_length=1, max_length=36)
     type: str = "ISO14443"
+
+
+class V2xBody(BaseModel):
+    mode: Literal["charge", "discharge"]
+    power_kw: float | None = Field(None, ge=0, le=1000)
+
+
+class MeterBody(BaseModel):
+    import_kwh: float | None = Field(None, ge=0)
+    export_kwh: float | None = Field(None, ge=0)
+
+
+class ListToken(BaseModel):
+    token: str = Field(min_length=1, max_length=36)
+    status: Literal["Accepted", "Blocked", "Expired", "Invalid"] = "Accepted"
+
+
+class RebootBody(BaseModel):
+    reason: str = "PowerUp"
+
+
+class RawFrameBody(BaseModel):
+    frame: str = Field(min_length=1, max_length=200_000)
+
+
+class InjectBody(BaseModel):
+    action: str
+    payload: dict = Field(default_factory=dict)
 
 
 class StopBody(BaseModel):
@@ -118,6 +171,12 @@ class VariableBody(BaseModel):
     evse_id: int | None = None
 
 
+LOCKED_WHILE_CONNECTED = {
+    "ocpp_id", "csms_url", "password", "security_profile", "ocpp_version", "verify_tls", "evses", "model", "vendor", "firmware_version", "serial_number", "iccid", "imsi",
+    "charge_box_serial_number", "meter_type", "meter_serial_number", "smart_plug",
+}
+
+
 def create_app(token: str | None = None) -> FastAPI:
     auth = Auth(token)
     hub = Hub()
@@ -129,7 +188,7 @@ def create_app(token: str | None = None) -> FastAPI:
         for st in list(stations.values()):
             await st.shutdown()
 
-    app = FastAPI(title="OCPP 1.6 and 2.0.1 Charging Station Simulator", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Volkai: OCPP 1.6 and 2.0.1 charge point simulator", version="1.0.0", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$", allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"])
     app.state.hub, app.state.stations = hub, stations
 
@@ -139,6 +198,12 @@ def create_app(token: str | None = None) -> FastAPI:
         if path.startswith("/api/") and path not in PUBLIC and not auth.allows(request.cookies, request.headers):
             return JSONResponse({"detail": "Login required"}, status_code=401)
         return await call_next(request)
+
+    @app.middleware("http")
+    async def signature(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Created-By"] = ABOUT["signature"]
+        return response
 
     class Login(BaseModel):
         token: str
@@ -178,6 +243,9 @@ def create_app(token: str | None = None) -> FastAPI:
     async def value_error(_, exc: ValueError):
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
+    async def _sync(fn, *args):
+        return fn(*args)
+
     async def guarded(coro):
         try:
             return await coro
@@ -185,6 +253,10 @@ def create_app(token: str | None = None) -> FastAPI:
             raise HTTPException(422, str(exc))
 
     # ------------------------------------------------------------------------------------ catalogue
+    @app.get("/api/about")
+    async def about():
+        return ABOUT
+
     @app.get("/api/meta")
     async def meta():
         return {
@@ -193,7 +265,12 @@ def create_app(token: str | None = None) -> FastAPI:
             "faults": FAULTS,
             "scenarios": [{k: v for k, v in s.items() if k != "steps"} | {"steps": len(s["steps"])} for s in CATALOG_SCENARIOS.values()],
             "station_messages": sorted(Station.CP_ACTIONS), "commands": COMMAND_NAMES,
-            "versions": {"2.0.1": {"station_messages": sorted(Station.CP_ACTIONS), "commands": COMMAND_NAMES}, "1.6": {"station_messages": sorted(CP_ACTIONS_16), "commands": COMMAND_NAMES_16}},
+            "versions": {
+                "2.0.1": {"station_messages": sorted(Station.CP_ACTIONS), "commands": COMMAND_NAMES},
+                "1.6": {"station_messages": sorted(CP_ACTIONS_16), "commands": COMMAND_NAMES_16},
+            },
+            "boot_reasons": BOOT_REASONS, "token_types": ["ISO14443", "ISO15693", "eMAID", "Central", "Local", "NoAuthorization"],
+            "about": ABOUT,
             "rule_effects": {"out": sorted(OUT_EFFECTS), "in": sorted(IN_EFFECTS)}, "error_codes": ERROR_CODES,
             "stop_reasons": sorted({"DeAuthorized", "EmergencyStop", "EnergyLimitReached", "EVDisconnected", "GroundFault", "ImmediateReset", "Local", "LocalOutOfCredit",
                                     "MasterPass", "Other", "OvercurrentFault", "PowerLoss", "PowerQuality", "Reboot", "Remote", "SOCLimitReached", "StoppedByEV", "TimeLimitReached", "Timeout"}),
@@ -253,9 +330,10 @@ def create_app(token: str | None = None) -> FastAPI:
         # Only what is really different counts as a change (the edit form sends every field).
         current = st.cfg.model_dump()
         changes = {k: v for k, v in changes.items() if current.get(k) != v}
-        locked = {"ocpp_id", "csms_url", "password", "security_profile", "ocpp_version", "verify_tls", "evses", "model"} & changes.keys()
+        # identity, credentials, protocol and hardware are fixed while connected; behaviour switches can change live
+        locked = changes.keys() & LOCKED_WHILE_CONNECTED
         if locked and st.want_connected:
-            raise HTTPException(409, "Disconnect the station before changing its charger id, URL, credentials or hardware")
+            raise HTTPException(409, "Disconnect the station before changing its charger id, URL, credentials, OCPP version, identity or hardware")
         if "evses" in changes:
             busy = [e.id for e in st.evses if e.plugged is not None or e.tx is not None]
             if busy:
@@ -316,6 +394,36 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.post("/api/stations/{station_id}/evse/{evse_id}/ev")
     async def ev(station_id: str, evse_id: int, body: EvBody):
         return await guarded(get(station_id).set_ev(evse_id, ready=body.ready, soc=body.soc, target_soc=body.target_soc))
+
+    @app.post("/api/stations/{station_id}/evse/{evse_id}/v2x")
+    async def v2x(station_id: str, evse_id: int, body: V2xBody):
+        return await guarded(get(station_id).set_v2x(evse_id, body.mode, body.power_kw))
+
+    @app.post("/api/stations/{station_id}/evse/{evse_id}/meter")
+    async def meter(station_id: str, evse_id: int, body: MeterBody):
+        return await guarded(get(station_id).set_meter_register(evse_id, body.import_kwh, body.export_kwh))
+
+    @app.post("/api/stations/{station_id}/local-list", status_code=201)
+    async def local_list_add(station_id: str, body: ListToken):
+        return await guarded(_sync(get(station_id).local_list_add, body.token, body.status))
+
+    @app.delete("/api/stations/{station_id}/local-list/{token}")
+    async def local_list_remove(station_id: str, token: str):
+        return await guarded(_sync(get(station_id).local_list_remove, token))
+
+    @app.post("/api/stations/{station_id}/reboot")
+    async def reboot(station_id: str, body: RebootBody):
+        return await guarded(get(station_id).reboot_with(body.reason))
+
+    @app.post("/api/stations/{station_id}/raw")
+    async def raw_frame(station_id: str, body: RawFrameBody):
+        """Send any text on the WebSocket as-is (even malformed JSON), to test how the CSMS copes."""
+        return await guarded(get(station_id).send_raw_frame(body.frame))
+
+    @app.post("/api/stations/{station_id}/inject")
+    async def inject(station_id: str, body: InjectBody):
+        """Run a CSMS command locally, as if your CSMS had sent it (no CSMS needed)."""
+        return await guarded(get(station_id).simulate_command(body.action, body.payload))
 
     # ------------------------------------------------------------------------------------- faults
     @app.post("/api/stations/{station_id}/faults", status_code=201)

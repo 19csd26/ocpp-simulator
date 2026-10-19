@@ -156,6 +156,8 @@ class CommandsMixin:
             return {"status": "Rejected", "transaction_id": evse.tx.id, "status_info": {"reason_code": "TxInProgress"}}
         if not self.evse_ready(evse):
             return {"status": "Rejected", "status_info": {"reason_code": "Unavailable"}}
+        if self.cfg.smart_plug:
+            await self.smart_plug_on(evse)  # no cable detection: the remote start itself switches the socket on
         res = self.reservation_for(evse)
         if res is not None and res["id_token"]["id_token"] != id_token["id_token"]:
             return {"status": "Rejected", "status_info": {"reason_code": "Reserved"}}

@@ -1,4 +1,11 @@
-# OCPP 1.6 & 2.0.1 Charge Point Simulator
+<p align="center"><img src="docs/assets/banner.svg" alt="Volkai: simulate any charger, break it on purpose" width="720"></p>
+
+# Volkai
+
+**Simulate any charger. Break it on purpose.** Volkai is an OCPP 1.6J and 2.0.1 charge point simulator with a web UI. It behaves like a real charger,
+and fails like one whenever you ask: power meter failure, power loss, network loss and more.
+
+> Designed and built by **Raghav** ([@19csd26](https://github.com/19csd26)). Copyright © 2026 Raghav (19csd26). All rights reserved. See [NOTICE](NOTICE).
 
 A charge-point simulator with a web UI, for testing a CSMS (central system) without hardware.
 Type the CSMS WebSocket URL and a charger ID; the station connects (as OCPP 1.6J or 2.0.1, or whichever your CSMS speaks), boots, and reports every connector
@@ -85,8 +92,11 @@ Treat the token like a password: anyone who has it can make the simulator connec
 
 ## Features
 
-- **OCPP 1.6J and 2.0.1, per charger**: choose **Auto** (offers both `ocpp2.0.1` and `ocpp1.6` and uses whichever your CSMS picks), **2.0.1** or **1.6**. All the same sessions, faults, rules and scenarios work on both.
+- **OCPP 1.6J and 2.0.1, per charger**: choose **Auto** (it recognises 1.6 or 2.0.1: it offers `ocpp2.0.1` and `ocpp1.6` and uses whichever your CSMS picks), **2.0.1** or **1.6**. The same sessions, faults, rules and scenarios work on both.
 - **OCPP 1.6J**: all 28 operations (10 from the charger, 19 from the CSMS, DataTransfer both ways), the 1.6 connector status model (Preparing, Charging, SuspendedEV, Finishing, ...), integer transaction ids, configuration keys, offline queueing.
+- **Bidirectional charging (V2G)**: a vehicle can feed energy back; the export register, export power and the vehicle's battery follow, and the export measurands (`Energy.Active.Export.Register`, `Power.Active.Export`) are reported to the CSMS.
+- **Auto charge** (the vehicle identifies itself, no card), **smart plug** (no cable detection, remote start only), a **Finishing mode** switch for 1.6, a **Temperature** measurand (1.6) with a gun that warms up while charging, **Power.Factor**, and a **meter register** you can set by hand.
+- **Simulate a CSMS command locally** (no CSMS needed), send a **raw frame** (even malformed JSON), edit the **local authorization list**, **reboot with a chosen boot reason**, a virtual **station display**, **saved CSMS addresses**, and a full **charger identity** (vendor, model, serial, firmware, ICCID, IMSI, meter).
 - **All 64 OCPP 2.0.1 messages**: 25 charge-point-to-CSMS and 40 CSMS-to-charge-point (DataTransfer both ways). A test fails if one is missing.
 - **Station definition**: presets (AC 7 kW, AC 22 kW dual, DC 60 kW dual, DC 150 kW, mixed hub) or a custom EVSE/connector editor; Basic-auth password and security profile; time-scale speed-up.
 - **Sessions**: plug in, tap card, remote start/stop, stop, unplug; vehicle models with state of charge and target; full battery ends the session (`StoppedByEV`).
@@ -95,7 +105,7 @@ Treat the token like a password: anyone who has it can make the simulator connec
 - **Smart charging**: profile validation, stack levels, absolute/relative/recurring profiles, composite schedules, `ChargingRateChanged`.
 - **Fault injection (24 kinds)**: `power_meter_failure` (stop reporting, frozen, rollback, spike, invalid), `power_loss`, network loss / flapping / latency / packet loss, over/under-voltage, over-current, ground fault, over-temperature, emergency stop, tamper, contactor and lock failures, reader failure, vehicle comm loss, clock drift, watchdog reboot, failing firmware/log transfers, and more.
 - **Message rules**: delay, drop, duplicate or corrupt outgoing messages; delay, time out, error, reject or invalidate replies to incoming commands.
-- **Scenarios**: 32 built-in, plus custom JSON scenarios (`do` / `expect` steps).
+- **Scenarios**: 35 built-in (including V2G discharge, auto charge and smart-plug remote start), plus custom JSON scenarios (`do` / `expect` steps).
 - **Live log** with search, direction/message filters and JSON export.
 
 ## Tests
@@ -114,3 +124,9 @@ Tests start the mock CSMS in-process on free ports; nothing external is needed.
 - Scenarios that start sessions use cards `CARD1` and `CARD2`; register them as accepted tokens in your CSMS. `unknown_token` expects the CSMS to refuse its token.
 - The API has **no authentication unless `SIM_TOKEN` is set**. Without it, keep it on localhost (CORS is limited to localhost). The token is one shared secret, not per-user accounts, and there is no HTTPS of its own: use a tunnel or reverse proxy for TLS.
 - Stations live in memory; restarting the backend forgets them (the UI re-offers your last form values).
+
+## Ownership
+
+Volkai is designed and built by **Raghav** ([github.com/19csd26](https://github.com/19csd26)).
+Copyright © 2026 Raghav (19csd26). All rights reserved. The author's name is shown in the UI (sidebar and page footer), in the
+`X-Created-By` header of every API response, at `GET /api/about`, in the package metadata and at server start-up, and is recorded in [NOTICE](NOTICE).

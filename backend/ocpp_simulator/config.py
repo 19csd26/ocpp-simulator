@@ -41,7 +41,7 @@ class StationConfig(BaseModel):
     csms_url: str = "ws://localhost:8000/ocpp"  # base URL; the station id is appended
     password: str | None = None  # HTTP Basic password (security profile 1 and 2)
     security_profile: Literal[0, 1, 2, 3] = 1
-    ocpp_version: Literal["auto", "2.0.1", "1.6"] = "2.0.1"  # auto: offer both subprotocols and use whichever the CSMS picks
+    ocpp_version: Literal["auto", "2.0.1", "1.6"] = "2.0.1"  # auto: offer 2.0.1 and 1.6 and use whichever the CSMS picks
     verify_tls: bool = True
     ca_file: str | None = None
     client_cert: str | None = None  # security profile 3 (mutual TLS)
@@ -52,11 +52,18 @@ class StationConfig(BaseModel):
     firmware_version: str = "1.0.0"
     iccid: str = "8991101200003204510"
     imsi: str = "310150123456789"
+    charge_box_serial_number: str = ""  # OCPP 1.6 BootNotification
+    meter_type: str = ""  # OCPP 1.6 BootNotification (only sent when filled in)
+    meter_serial_number: str = ""  # OCPP 1.6 BootNotification (only sent when filled in)
     evses: list[EvseSpec] = Field(default_factory=lambda: [EvseSpec()], min_length=1, max_length=8)
     time_scale: float = Field(1.0, ge=1, le=600)  # speeds up charging only (energy / SoC), never protocol timers
     boot_on_reconnect: bool = True  # send BootNotification again after every WebSocket reconnect
     auto_connect: bool = False
     end_on_full: bool = True  # end the session (StoppedByEV) when the vehicle battery is full
+    auto_charge: bool = False  # the vehicle presents its own id when plugged in (plug-and-charge / "auto charge"): no card needed
+    vehicle_id: str = "VID:FCA47A10DC70"  # the id that vehicle presents (max 20 characters, the OCPP 1.6 idTag limit)
+    smart_plug: bool = False  # no cable detection: the connector stays Available until a remote start, then goes straight to Charging
+    finishing_mode: bool = True  # OCPP 1.6: after a session the connector shows Finishing until unplugged (off: Preparing)
 
 
 PRESETS: dict[str, dict] = {
@@ -72,9 +79,10 @@ PRESETS: dict[str, dict] = {
         {"current_type": "DC", "max_power_kw": 60, "phases": 3, "voltage": 400, "connectors": [{"type": "cCCS2"}]}]},
 }
 
+# max_discharge_kw > 0: the vehicle can feed energy back (V2G / V2H), as long as the connector supports it
 EV_MODELS: dict[str, dict] = {
-    "city": {"label": "City EV · 30 kWh (AC 7.4 kW / DC 50 kW)", "capacity_kwh": 30, "max_ac_kw": 7.4, "max_dc_kw": 50},
-    "mid": {"label": "Mid-size EV · 60 kWh (AC 11 kW / DC 100 kW)", "capacity_kwh": 60, "max_ac_kw": 11, "max_dc_kw": 100},
-    "large": {"label": "Large EV · 100 kWh (AC 11 kW / DC 150 kW)", "capacity_kwh": 100, "max_ac_kw": 11, "max_dc_kw": 150},
-    "scooter": {"label": "E-scooter · 3 kWh (AC 1.5 kW)", "capacity_kwh": 3, "max_ac_kw": 1.5, "max_dc_kw": 0},
+    "city": {"label": "City EV · 30 kWh (AC 7.4 kW / DC 50 kW)", "capacity_kwh": 30, "max_ac_kw": 7.4, "max_dc_kw": 50, "max_discharge_kw": 0},
+    "mid": {"label": "Mid-size EV · 60 kWh (AC 11 kW / DC 100 kW)", "capacity_kwh": 60, "max_ac_kw": 11, "max_dc_kw": 100, "max_discharge_kw": 10},
+    "large": {"label": "Large EV · 100 kWh (AC 11 kW / DC 150 kW)", "capacity_kwh": 100, "max_ac_kw": 11, "max_dc_kw": 150, "max_discharge_kw": 20},
+    "scooter": {"label": "E-scooter · 3 kWh (AC 1.5 kW)", "capacity_kwh": 3, "max_ac_kw": 1.5, "max_dc_kw": 0, "max_discharge_kw": 0},
 }

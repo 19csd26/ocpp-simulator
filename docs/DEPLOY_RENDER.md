@@ -1,4 +1,4 @@
-# Deploying on Render and connecting a charger
+# Deploying Volkai on Render and connecting a charger
 
 This guide deploys the simulator on Render's free tier from this GitHub repo, then connects a simulated charger to your
 CSMS. These steps follow Render's Blueprint flow; button names may differ slightly from what you see in the dashboard.

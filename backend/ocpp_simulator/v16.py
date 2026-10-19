@@ -118,6 +118,7 @@ class V16Mixin:
 
     @property
     def version(self) -> str:
+        """The protocol in use: what the CSMS selected on the connection, else what this charger is configured for (auto: 2.0.1)."""
         if self._negotiated:
             return self._negotiated
         return "1.6" if self.cfg.ocpp_version == "1.6" else "2.0.1"
@@ -126,8 +127,12 @@ class V16Mixin:
     def v16(self) -> bool:
         return self.version == "1.6"
 
+    SUBPROTOCOLS = {"2.0.1": "ocpp2.0.1", "1.6": "ocpp1.6"}
+
     def offered_subprotocols(self) -> list[str]:
-        return {"2.0.1": ["ocpp2.0.1"], "1.6": ["ocpp1.6"]}.get(self.cfg.ocpp_version, ["ocpp2.0.1", "ocpp1.6"])
+        if self.cfg.ocpp_version == "auto":
+            return [self.SUBPROTOCOLS[v] for v in ("2.0.1", "1.6")]  # Auto recognises 1.6 and 2.0.1: the CSMS picks
+        return [self.SUBPROTOCOLS[self.cfg.ocpp_version]]
 
     # ---------------------------------------------------------------------------------- connector numbering
     def connectors16(self) -> list[tuple[int, object, object]]:
@@ -158,13 +163,18 @@ class V16Mixin:
             return "Unavailable"  # another connector of the same EVSE is in use
         if evse.tx is not None:
             return TX_STATE_STATUS.get(evse.tx.charging_state, "SuspendedEVSE")
+        if self.cfg.smart_plug:
+            return "Reserved" if self._reserved(evse) else "Available"  # no cable detection: nothing happens until a remote start
         if evse.plugged is conn:
-            return "Finishing" if getattr(evse, "finishing", False) else "Preparing"
+            return "Finishing" if getattr(evse, "finishing", False) and self.cfg.finishing_mode else "Preparing"
         if evse.auth is not None:
             return "Preparing"  # authorised, waiting for the vehicle
-        if any(r["evse_id"] in (evse.id, None) and r["expiry"] > self.now() for r in self.reservations.values()):
+        if self._reserved(evse):
             return "Reserved"
         return "Available"
+
+    def _reserved(self, evse) -> bool:
+        return any(r["evse_id"] in (evse.id, None) and r["expiry"] > self.now() for r in self.reservations.values())
 
     def status0_16(self) -> str:
         if any(f.active and f.scope is None and f.state.get("faulted") for f in self.faults.values()):
@@ -239,6 +249,10 @@ class V16Mixin:
             for key in ("iccid", "imsi"):
                 if modem.get(key):
                     out[key] = modem[key]
+            for value, dst in ((self.cfg.charge_box_serial_number, "charge_box_serial_number"), (self.cfg.meter_type, "meter_type"),
+                               (self.cfg.meter_serial_number, "meter_serial_number")):
+                if value:
+                    out[dst] = value[:25]
             return "BootNotification", out
         if action == "Authorize":
             return "Authorize", {"id_tag": f["id_token"]["id_token"][:20]}

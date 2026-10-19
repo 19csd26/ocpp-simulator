@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import AddStation from './components/AddStation'
 import Console, { STATE_TONE } from './components/Console'
 import Login from './components/Login'
+import Signature from './components/Signature'
 import { ToastProvider } from './components/Toast'
 import { api } from './api'
 import { useSim } from './useSim'
@@ -19,7 +20,7 @@ function Shell() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="brand"><span className="brand-mark">⚡</span><div><b>OCPP SIM</b><small>1.6 &amp; 2.0.1 charger simulator</small></div></div>
+        <div className="brand"><img className="brand-logo" src="/logo.svg" alt="Volkai logo" width={44} height={44} /><div><b>VOLKAI</b><small>OCPP 1.6 · 2.0.1</small></div></div>
         <div className="sim-link"><span className={`dot ${sim.connected ? 'on' : 'bad'}`} />{sim.connected ? 'Simulator backend connected' : 'Backend unreachable – retrying…'}</div>
         <button onClick={() => { setAdding(true); setSelected(null) }}>＋ Add charger</button>
         {sim.order.map((id) => {
@@ -34,6 +35,7 @@ function Shell() {
         })}
         <div className="spacer" />
         <small className="muted" style={{ padding: '0 6px', lineHeight: 1.5 }}>No database: chargers live in memory and your last entries are remembered in this browser. The API has no login, so keep it on localhost.</small>
+        <Signature />
       </aside>
       <main className="main">
         {!sim.meta ? <p className="muted">Loading…</p> : adding || !st ? (
@@ -50,6 +52,7 @@ function Shell() {
         ) : (
           <Console key={st.id} st={st} meta={sim.meta} logs={sim.logs[st.id] ?? []} run={sim.runs[st.id] ?? null} onClearLog={() => sim.clearLog(st.id)} onDeleted={() => { setSelected(null); void sim.refresh() }} />
         )}
+        <Signature compact />
       </main>
     </div>
   )

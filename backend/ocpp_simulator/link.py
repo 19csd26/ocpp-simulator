@@ -77,14 +77,19 @@ class Link(RuleRouting, BaseChargePoint):
     """OCPP 2.0.1 endpoint."""
 
 
-def _make_handler(name: str):
+def _make_handler(name: str, results=call_result, actions=Action):
     async def handler(self, **kwargs):
         result = await self.sim.run_command(name, kwargs)
-        return getattr(call_result, name)(**result)
+        return getattr(results, name)(**result)
 
     handler.__name__ = f"on_{snake(name)}"
-    return on(Action(name))(handler)
+    return on(actions(name))(handler)
 
 
-for _name in COMMAND_NAMES:
-    setattr(Link, f"on_{snake(_name)}", _make_handler(_name))
+def attach_handlers(link_class, names, results, actions) -> None:
+    """Give a ChargePoint class one handler per CSMS command (the library routes by the handler's name)."""
+    for name in names:
+        setattr(link_class, f"on_{snake(name)}", _make_handler(name, results, actions))
+
+
+attach_handlers(Link, COMMAND_NAMES, call_result, Action)

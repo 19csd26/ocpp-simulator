@@ -29,12 +29,12 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
 export interface ConnectorState { id: number; type: string; status: string; plugged: boolean; ocpp_id: number }
 export interface TxState {
   id: string; connector_id: number; started_at: string; charging_state: string; energy_kwh: number; id_token: string | null
-  seq_no: number; duration_s: number; total_cost: number | null; remote_start_id: number | null; ocpp_id: number | null
+  seq_no: number; duration_s: number; total_cost: number | null; remote_start_id: number | null; ocpp_id: number | null; export_kwh: number
 }
-export interface EvState { key: string; label: string; capacity_kwh: number; soc: number; target_soc: number; ready: boolean }
+export interface EvState { key: string; label: string; capacity_kwh: number; soc: number; target_soc: number; ready: boolean; bidirectional: boolean; max_discharge_kw: number }
 export interface EvseState {
   id: number; current_type: 'AC' | 'DC'; max_power_kw: number; voltage: number; phases: number; operative: boolean; locked: boolean
-  power_kw: number; limit_kw: number; register_kwh: number; temperature: number; plugged_connector: number | null; authorized: string | null
+  power_kw: number; limit_kw: number; register_kwh: number; temperature: number; export_register_kwh: number; export_power_kw: number; v2x: 'charge' | 'discharge'; current_a: number; plugged_connector: number | null; authorized: string | null
   faulted: boolean; remote_pending: boolean; ev: EvState | null; connectors: ConnectorState[]
   reservation: { id: number; token: string; expiry: string } | null; tx: TxState | null
 }
@@ -46,7 +46,7 @@ export interface Snapshot {
   id: string; name: string; ocpp_id: string; csms_url: string; vendor: string; model: string; firmware_version: string
   version: '2.0.1' | '1.6'; negotiated: string | null; state: string; powered: boolean; boot_status: string | null; want_connected: boolean; last_error: string | null
   connected_since: number | null; reconnect_attempt: number; heartbeat_interval: number; time_scale: number
-  config: { ocpp_version: 'auto' | '2.0.1' | '1.6'; security_profile: number; verify_tls: boolean; has_password: boolean; boot_on_reconnect: boolean; end_on_full: boolean; hardware: { current_type: 'AC' | 'DC'; max_power_kw: number; voltage: number; phases: number; connectors: { type: string }[] }[] }
+  config: { ocpp_version: 'auto' | '2.0.1' | '1.6'; auto_charge: boolean; vehicle_id: string; smart_plug: boolean; finishing_mode: boolean; vendor: string; model: string; serial_number: string; firmware_version: string; iccid: string; imsi: string; charge_box_serial_number: string; meter_type: string; meter_serial_number: string; security_profile: number; verify_tls: boolean; has_password: boolean; boot_on_reconnect: boolean; end_on_full: boolean; hardware: { current_type: 'AC' | 'DC'; max_power_kw: number; voltage: number; phases: number; connectors: { type: string }[] }[] }
   stats: { sent: number; received: number; errors: number; timeouts: number; reconnects: number }; queue: number; notes: string[]
   evses: EvseState[]; faults: { active: FaultRecord[]; history: FaultRecord[] }; rules: Rule[]
   last_responses: Record<string, { status: string | null }>; scenario: Run | null
@@ -67,7 +67,9 @@ export interface Param { key: string; label: string; type: 'number' | 'boolean' 
 export interface FaultSpec { title: string; scope: 'station' | 'evse' | 'both'; group: string; description: string; params: Param[]; expect: string; oneshot?: boolean }
 export interface Meta {
   presets: Record<string, { label: string; model: string; evses: { current_type: string; max_power_kw: number; voltage: number; phases: number; connectors: { type: string }[] }[] }>
-  ev_models: Record<string, { label: string; capacity_kwh: number; max_ac_kw: number; max_dc_kw: number }>
+  ev_models: Record<string, { label: string; capacity_kwh: number; max_ac_kw: number; max_dc_kw: number; max_discharge_kw: number }>
+  boot_reasons: string[]; token_types: string[]
+  about: { name: string; description: string; owner: string; github: string; repository: string; copyright: string; signature: string }
   connector_types: string[]; faults: Record<string, FaultSpec>
   scenarios: { id: string; title: string; group: string; description: string; steps: number }[]
   versions: Record<string, { station_messages: string[]; commands: string[] }>

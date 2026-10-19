@@ -7,6 +7,10 @@ interface Saved { name: string; ocpp_id: string; csms_url: string; preset: strin
 type Version = 'auto' | '2.0.1' | '1.6'
 const PROTOCOL: Record<Version, string> = { auto: 'ocpp2.0.1 or ocpp1.6, whichever the CSMS accepts', '2.0.1': 'ocpp2.0.1', '1.6': 'ocpp1.6' }
 
+interface Preset { name: string; url: string }
+const PRESET_KEY = 'sim.csms-presets'
+const loadPresets = (): Preset[] => { try { return JSON.parse(localStorage.getItem(PRESET_KEY) ?? '[]') } catch { return [] } }
+
 const KEY = 'sim.saved'
 const load = (): Saved[] => { try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') } catch { return [] } }
 
@@ -29,6 +33,28 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
   const [hwTouched, setHwTouched] = useState(false)
   const [scale, setScale] = useState(edit?.time_scale ?? 1)
   const [bootOnReconnect, setBootOnReconnect] = useState(cfg?.boot_on_reconnect ?? true)
+  const [autoCharge, setAutoCharge] = useState(cfg?.auto_charge ?? false)
+  const [vehicleId, setVehicleId] = useState(cfg?.vehicle_id ?? 'VID:FCA47A10DC70')
+  const [smartPlug, setSmartPlug] = useState(cfg?.smart_plug ?? false)
+  const [finishing, setFinishing] = useState(cfg?.finishing_mode ?? true)
+  const [vendor, setVendor] = useState(cfg?.vendor ?? '')
+  const [modelName, setModelName] = useState(cfg?.model ?? '')
+  const [serial, setSerial] = useState(cfg?.serial_number ?? '')
+  const [firmware, setFirmware] = useState(cfg?.firmware_version ?? '')
+  const [iccid, setIccid] = useState(cfg?.iccid ?? '')
+  const [imsi, setImsi] = useState(cfg?.imsi ?? '')
+  const [boxSerial, setBoxSerial] = useState(cfg?.charge_box_serial_number ?? '')
+  const [meterType, setMeterType] = useState(cfg?.meter_type ?? '')
+  const [meterSerial, setMeterSerial] = useState(cfg?.meter_serial_number ?? '')
+  const [presets, setPresets] = useState<Preset[]>(loadPresets)
+  const savePreset = () => {
+    const name = window.prompt('Name for this CSMS address (for example "dev server"):', new URL(url.replace(/^ws/, 'http')).hostname)
+    if (!name) return
+    const next = [{ name, url: url.trim() }, ...presets.filter((p) => p.name !== name)].slice(0, 20)
+    setPresets(next)
+    localStorage.setItem(PRESET_KEY, JSON.stringify(next))
+  }
+  const dropPreset = (name: string) => { const next = presets.filter((p) => p.name !== name); setPresets(next); localStorage.setItem(PRESET_KEY, JSON.stringify(next)) }
   const [endOnFull, setEndOnFull] = useState(cfg?.end_on_full ?? true)
   const locked = !!edit?.want_connected  // identity, credentials and hardware can only change while disconnected
   const [connect, setConnect] = useState(true)
@@ -40,15 +66,18 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
   const secure = url.startsWith('wss://')
   const setHw = (i: number, patch: Partial<Hw>) => { setHwTouched(true); setCustom(hw.map((e, j) => (i === j ? { ...e, ...patch } : e))) }
 
+  /** Only the identity fields that were filled in are sent: an empty one keeps the default. */
+  const identity = () => Object.fromEntries(Object.entries({ vendor, model: modelName, serial_number: serial, firmware_version: firmware, iccid, imsi, charge_box_serial_number: boxSerial, meter_type: meterType, meter_serial_number: meterSerial }).filter(([, v]) => v.trim() !== '').map(([k, v]) => [k, v.trim()]))
+
   async function submit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError('')
     try {
       if (edit) {
-        const body: Record<string, unknown> = { name: name.trim() || `Simulator ${chargerId}`, time_scale: scale, boot_on_reconnect: bootOnReconnect, end_on_full: endOnFull }
+        const body: Record<string, unknown> = { name: name.trim() || `Simulator ${chargerId}`, time_scale: scale, boot_on_reconnect: bootOnReconnect, end_on_full: endOnFull, auto_charge: autoCharge, vehicle_id: vehicleId, finishing_mode: finishing }
         if (!locked) {
-          Object.assign(body, { ocpp_id: chargerId.trim(), csms_url: url.trim(), security_profile: profile, ocpp_version: version, verify_tls: verify })
+          Object.assign(body, { ocpp_id: chargerId.trim(), csms_url: url.trim(), security_profile: profile, ocpp_version: version, verify_tls: verify, smart_plug: smartPlug, ...identity() })
           if (password || dropPassword) body.password = dropPassword ? '' : password
           if (hwTouched) Object.assign(body, custom ? { evses: custom } : { preset })
         }
@@ -60,7 +89,7 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
       }
       const snap = await api<Snapshot>('/api/stations', {
         method: 'POST',
-        body: { name: name.trim() || `Simulator ${chargerId}`, ocpp_id: chargerId.trim(), csms_url: url.trim(), password: password || null, security_profile: profile, ocpp_version: version, verify_tls: verify, preset, evses: custom, time_scale: scale, connect },
+        body: { name: name.trim() || `Simulator ${chargerId}`, ocpp_id: chargerId.trim(), csms_url: url.trim(), password: password || null, security_profile: profile, ocpp_version: version, verify_tls: verify, auto_charge: autoCharge, vehicle_id: vehicleId, smart_plug: smartPlug, finishing_mode: finishing, ...identity(), preset, evses: custom, time_scale: scale, connect },
       })
       const entry: Saved = { name: name.trim(), ocpp_id: chargerId.trim(), csms_url: url.trim(), preset, security_profile: profile, ocpp_version: version }
       localStorage.setItem(KEY, JSON.stringify([entry, ...saved.filter((s) => !(s.ocpp_id === entry.ocpp_id && s.csms_url === entry.csms_url))].slice(0, 8)))
@@ -85,6 +114,15 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
           <input value={chargerId} disabled={locked} onChange={(e) => setChargerId(e.target.value)} placeholder="CP001" pattern="[A-Za-z0-9_.\-]{1,60}" required spellCheck={false} />
         </label>
       </div>
+      <div className="row" style={{ gap: 6 }}>
+        <small className="muted">Saved CSMS:</small>
+        <select style={{ width: 220 }} value="" disabled={locked} onChange={(e) => { if (e.target.value) setUrl(e.target.value) }} aria-label="saved CSMS addresses">
+          <option value="">{presets.length ? 'pick a saved address…' : 'none saved yet'}</option>
+          {presets.map((p) => <option key={p.name} value={p.url}>{p.name} · {p.url.replace(/^wss?:\/\//, '')}</option>)}
+        </select>
+        <button type="button" className="ghost small" disabled={locked || !url.trim()} onClick={savePreset}>Save this address</button>
+        {presets.some((p) => p.url === url.trim()) && <button type="button" className="ghost small" onClick={() => dropPreset(presets.find((p) => p.url === url.trim())!.name)}>Forget it</button>}
+      </div>
       <div className="url-preview mono">Connects to: {target} · subprotocol {PROTOCOL[version]}</div>
 
       {saved.length > 0 && (
@@ -107,7 +145,7 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
         </label>
         <label>OCPP version
           <select value={version} disabled={locked} onChange={(e) => setVersion(e.target.value as Version)}>
-            <option value="auto">Auto · offer 2.0.1 and 1.6</option><option value="2.0.1">OCPP 2.0.1</option><option value="1.6">OCPP 1.6J</option>
+            <option value="auto">Auto · recognises 1.6 or 2.0.1</option><option value="2.0.1">OCPP 2.0.1</option><option value="1.6">OCPP 1.6J</option>
           </select>
         </label>
         <label>Display name (optional)<input value={name} onChange={(e) => setName(e.target.value)} placeholder={`Simulator ${chargerId}`} /></label>
@@ -151,6 +189,32 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
         )}
       </div>
 
+      <div className="stack" style={{ gap: 6 }}>
+        <label className="inline"><input type="checkbox" checked={autoCharge} onChange={(e) => setAutoCharge(e.target.checked)} /> Auto charge: the vehicle identifies itself when plugged in, no card needed</label>
+        {autoCharge && <label style={{ maxWidth: 360 }}>Vehicle id (idTag, max 20 characters)<input value={vehicleId} maxLength={20} onChange={(e) => setVehicleId(e.target.value)} /></label>}
+        <label className="inline"><input type="checkbox" checked={smartPlug} disabled={locked} onChange={(e) => setSmartPlug(e.target.checked)} /> Smart plug: no cable detection, the connector stays Available until a remote start and then goes straight to Charging</label>
+        <label className="inline"><input type="checkbox" checked={finishing} onChange={(e) => setFinishing(e.target.checked)} /> OCPP 1.6: show <b>Finishing</b> after a session until the cable is unplugged (off: <b>Preparing</b>)</label>
+      </div>
+      <details>
+        <summary className="muted" style={{ cursor: 'pointer', fontSize: 12 }}>Charger identity sent in BootNotification (optional)</summary>
+        <fieldset disabled={locked} style={{ border: 0, padding: 0, margin: '8px 0 0' }}>
+          <div className="cols">
+            <label>Vendor<input value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="SimCharge" /></label>
+            <label>Model<input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="from the hardware preset" /></label>
+            <label>Firmware version<input value={firmware} onChange={(e) => setFirmware(e.target.value)} placeholder="1.0.0" /></label>
+          </div>
+          <div className="cols">
+            <label>Charge point serial number<input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="generated" /></label>
+            <label>Charge box serial number (1.6)<input value={boxSerial} onChange={(e) => setBoxSerial(e.target.value)} /></label>
+            <label>ICCID (SIM card)<input value={iccid} onChange={(e) => setIccid(e.target.value)} placeholder="8991101200003204510" /></label>
+          </div>
+          <div className="cols">
+            <label>IMSI<input value={imsi} onChange={(e) => setImsi(e.target.value)} placeholder="310150123456789" /></label>
+            <label>Meter type (1.6)<input value={meterType} onChange={(e) => setMeterType(e.target.value)} placeholder="not sent unless filled in" /></label>
+            <label>Meter serial number (1.6)<input value={meterSerial} onChange={(e) => setMeterSerial(e.target.value)} placeholder="generated" /></label>
+          </div>
+        </fieldset>
+      </details>
       {edit ? (
         <>
           <label className="inline"><input type="checkbox" checked={bootOnReconnect} onChange={(e) => setBootOnReconnect(e.target.checked)} /> Send BootNotification again after every reconnect</label>

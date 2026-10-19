@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 150" role="img" aria-label="Volkai: simulate any charger, break it on purpose">
+  <title>Volkai</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="720" y2="150" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#070d1d"/><stop offset="1" stop-color="#0d1a36"/></linearGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="720" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#22d3ee"/><stop offset=".6" stop-color="#34f5a2"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+  </defs>
+  <rect width="720" height="150" rx="18" fill="url(#bg)"/>
+  <rect x="1" y="1" width="718" height="148" rx="17" fill="none" stroke="url(#g)" stroke-opacity=".45"/>
+  <g transform="translate(30 20) scale(1.69)">
+    <path d="M32 2.5 57.5 17.25v29.5L32 61.5 6.5 46.75v-29.5z" fill="#070d1d" stroke="url(#g)" stroke-width="2" stroke-linejoin="round"/>
+    <g stroke="url(#g)" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <rect x="16" y="15" width="21" height="31" rx="4.5" fill="#0b1630"/><path d="M20.5 20h12" opacity=".7"/><path d="M13 50h27"/>
+      <path d="M37 29c6.5 0 9 2.4 9 6.8V40"/><rect x="42" y="40" width="8" height="7.5" rx="2.2" fill="#0b1630"/><path d="M44.2 47.5v3.2M47.8 47.5v3.2"/>
+    </g>
+    <path d="M29 22 21.2 34.5h5.6L24.6 44l9-12.4H28L29 22z" fill="url(#g)"/>
+  </g>
+  <text x="160" y="80" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="58" font-weight="800" letter-spacing="9" fill="url(#g)">VOLKAI</text>
+  <text x="162" y="110" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="17" letter-spacing="2.2" fill="#8aa0c0">SIMULATE ANY CHARGER. BREAK IT ON PURPOSE.</text>
+  <text x="162" y="132" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="12" letter-spacing="1.5" fill="#5d7396">OCPP 1.6J  ·  OCPP 2.0.1</text>
+</svg>

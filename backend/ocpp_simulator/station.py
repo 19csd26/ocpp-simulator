@@ -29,6 +29,7 @@ from ocpp_simulator.charging import ChargingMixin
 from ocpp_simulator.commands import CommandsMixin
 from ocpp_simulator.config import StationConfig
 from ocpp_simulator.devicemodel import default_model
+from ocpp_simulator.features import FeaturesMixin
 from ocpp_simulator.v16 import CP_ACTIONS_16, Link16, V16Mixin
 from ocpp_simulator.faults import FaultsMixin
 from ocpp_simulator.hub import Hub
@@ -50,7 +51,7 @@ class Result:
     error: str | None = None
 
 
-class Station(ChargingMixin, CommandsMixin, FaultsMixin, V16Mixin):
+class Station(ChargingMixin, CommandsMixin, FaultsMixin, V16Mixin, FeaturesMixin):
     def __init__(self, cfg: StationConfig, hub: Hub, response_timeout: float = RESPONSE_TIMEOUT) -> None:
         self.cfg = cfg
         self.hub = hub
@@ -123,7 +124,8 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin, V16Mixin):
             self.init_charging()
         else:
             for component, name, value in (("SecurityCtrlr", "Identity", cfg.ocpp_id), ("SecurityCtrlr", "SecurityProfile", cfg.security_profile),
-                                           ("ChargingStation", "Model", cfg.model)):
+                                           ("ChargingStation", "Model", cfg.model), ("ChargingStation", "VendorName", cfg.vendor),
+                                           ("ChargingStation", "SerialNumber", cfg.serial_number), ("ChargingStation", "FirmwareVersion", cfg.firmware_version)):
                 var = self.model.find(component, name)
                 if var is not None:
                     var.value = str(value)
@@ -397,7 +399,7 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin, V16Mixin):
 
     async def send_raw(self, action: str, payload: dict, *, validate: bool = True) -> Result:
         """Send any station -> CSMS message with a payload in the spec's camelCase (used by the UI and scenarios)."""
-        actions = CP_ACTIONS_16 if self.v16 else self.CP_ACTIONS
+        actions = self.cp_actions()
         if action not in actions:
             return Result(sent=False, error=f"'{action}' is not a message a charging station can send in OCPP {self.version}")
         link = self.link
@@ -410,6 +412,10 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin, V16Mixin):
                 return Result(sent=False, error=f"bad payload: {exc}")
             raise
         return await self._call(link, message, action, skip_validation=not validate)
+
+    def cp_actions(self) -> set[str]:
+        """The messages this charger can send in the protocol in use."""
+        return set(CP_ACTIONS_16) if self.v16 else self.CP_ACTIONS
 
     CP_ACTIONS = {
         "Authorize", "BootNotification", "ClearedChargingLimit", "DataTransfer", "FirmwareStatusNotification", "Get15118EVCertificate",
@@ -486,7 +492,12 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin, V16Mixin):
             "last_error": self.last_error, "connected_since": self.connected_since, "reconnect_attempt": self.reconnect_attempt,
             "heartbeat_interval": self.model.get_int("OCPPCommCtrlr", "HeartbeatInterval", 30), "time_scale": self.cfg.time_scale,
             "config": {"ocpp_version": self.cfg.ocpp_version, "security_profile": self.cfg.security_profile, "verify_tls": self.cfg.verify_tls, "has_password": bool(self.cfg.password),
-                       "boot_on_reconnect": self.cfg.boot_on_reconnect, "end_on_full": self.cfg.end_on_full, "hardware": [e.model_dump() for e in self.cfg.evses]},
+                       "boot_on_reconnect": self.cfg.boot_on_reconnect, "end_on_full": self.cfg.end_on_full,
+                       "auto_charge": self.cfg.auto_charge, "vehicle_id": self.cfg.vehicle_id, "smart_plug": self.cfg.smart_plug, "finishing_mode": self.cfg.finishing_mode,
+                       "vendor": self.cfg.vendor, "model": self.cfg.model, "serial_number": self.cfg.serial_number, "firmware_version": self.cfg.firmware_version,
+                       "iccid": self.cfg.iccid, "imsi": self.cfg.imsi, "charge_box_serial_number": self.cfg.charge_box_serial_number,
+                       "meter_type": self.cfg.meter_type, "meter_serial_number": self.cfg.meter_serial_number,
+                       "hardware": [e.model_dump() for e in self.cfg.evses]},
             "stats": dict(self.stats), "queue": len(self.tx_queue), "notes": list(self.notes)[-5:],
             "evses": self.evses_snapshot(), "faults": self.faults_snapshot(), "rules": self.rules.snapshot(),
             "last_responses": {k: {"status": v["status"]} for k, v in self.last_responses.items()},

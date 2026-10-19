@@ -236,7 +236,7 @@ class FaultsMixin:
 
     def temperature_of(self, evse) -> float:
         f = self.find_fault("over_temperature", evse.id)
-        target = float(f.params["temperature_c"]) if f else 28 + evse.power_w / 1000 * 0.35
+        target = float(f.params["temperature_c"]) if f else 28 + (evse.power_w + evse.export_power_w) / 1000 * 0.35
         return evse.temperature + (target - evse.temperature) * 0.3
 
     def extra_latency_s(self) -> float:

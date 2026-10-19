@@ -1,0 +1,15 @@
+Volkai: simulate any charger, break it on purpose
+=================================================
+
+An OCPP 1.6J and 2.0.1 charge point simulator with a web UI.
+
+Designed and built by Raghav (GitHub: 19csd26)
+https://github.com/19csd26/ocpp-simulator
+
+Copyright (c) 2026 Raghav (19csd26). All rights reserved.
+
+The ownership of this work, its design and its source code belongs to the author named above.
+No licence to copy, modify, distribute or sell it is granted unless the author gives one in writing.
+Third-party components keep their own licences (FastAPI, uvicorn, the `ocpp` library, React, Vite and others).
+
+"OCPP" and "Open Charge Point Protocol" are the work of the Open Charge Alliance. This project is not affiliated with it.

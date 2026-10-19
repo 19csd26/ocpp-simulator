@@ -29,8 +29,8 @@ label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); } label.i
 
 .app { display: grid; grid-template-columns: 270px 1fr; min-height: 100vh; }
 .side { padding: 18px 14px; border-right: 1px solid var(--border); background: rgba(8, 12, 26, .85); display: flex; flex-direction: column; gap: 10px; position: sticky; top: 0; height: 100vh; overflow: auto; }
-.brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 12px; } .brand-mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: #04121c; background: linear-gradient(135deg, var(--cyan), var(--green)); box-shadow: 0 0 20px rgba(34, 211, 238, .5); }
-.brand b { letter-spacing: .06em; } .brand small { display: block; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 12px; } .brand-logo { width: 44px; height: 44px; flex: none; filter: drop-shadow(0 0 10px rgba(34, 211, 238, .55)); }
+.brand b { letter-spacing: .22em; font-size: 15px; background: linear-gradient(90deg, var(--cyan), var(--green) 60%, var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; } .brand small { display: block; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
 .sim-link { font-size: 11px; display: flex; align-items: center; gap: 6px; padding: 0 6px; } .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); display: inline-block; flex-shrink: 0; }
 .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); } .dot.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); } .dot.bad { background: var(--red); box-shadow: 0 0 8px var(--red); }
 .st-item { display: grid; gap: 3px; padding: 10px 12px; border-radius: 11px; border: 1px solid var(--border); background: rgba(120, 170, 255, .04); cursor: pointer; text-align: left; font-weight: 500; color: var(--text); }
@@ -87,3 +87,12 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 @keyframes up { from { opacity: 0; transform: translateY(10px); } }
 .modal-bg { position: fixed; inset: 0; z-index: 60; background: rgba(3, 6, 15, .7); display: grid; place-items: center; padding: 20px; } .modal { width: min(460px, 100%); padding: 22px; border-radius: 16px; background: var(--panel-solid); border: 1px solid rgba(251, 113, 133, .5); display: grid; gap: 12px; }
 @media (max-width: 900px) { .app { grid-template-columns: 1fr; } .side { position: static; height: auto; } .ll { grid-template-columns: 74px minmax(0, 1fr) 14px; } .ld, .la { display: none; } .logpanel { margin: 0 -14px -40px; } .main { padding: 16px 14px 40px; } }
+
+/* bidirectional charging, station display, signature */
+.v2g { padding: 6px 8px; border: 1px dashed rgba(167, 139, 250, .5); border-radius: 8px; background: rgba(167, 139, 250, .06); }
+.v2g-live b { color: var(--violet); }
+.display-screen { background: #00130a; border: 1px solid rgba(52, 245, 162, .45); border-radius: 8px; padding: 12px 14px; font-family: var(--mono, monospace); color: var(--green); text-align: center; min-height: 64px; }
+.display-screen .line1 { font-size: 16px; } .display-screen .line2 { font-size: 11px; opacity: .7; margin-top: 4px; }
+.signature { margin-top: auto; padding: 10px 6px 4px; font-size: 11px; line-height: 1.5; color: var(--muted, #8aa0c0); border-top: 1px solid var(--border); }
+.signature b { color: var(--text); } .signature a { color: var(--cyan); text-decoration: none; }
+.footer-sig { text-align: center; font-size: 11px; color: var(--muted, #8aa0c0); padding: 14px 0 6px; }
