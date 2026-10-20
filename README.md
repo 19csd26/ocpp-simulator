@@ -16,7 +16,7 @@ There is no database and no CSMS integration. The UI remembers your last entries
 
 | Document | Read it for |
 |---|---|
-| [docs/guide/](docs/guide/README.md) | **Feature guide**: every feature explained with its definition, how it works, flow and sequence diagrams and a full worked example (sessions, metering, V2G, faults, rules, scenarios, commands, API, recipes) |
+| [docs/guide/](docs/guide/README.md) | **Feature guide** (also inside the app: *Docs & guide* in the sidebar, with interactive diagrams): every feature explained with its definition, how it works, flow and sequence diagrams and a full worked example (sessions, metering, V2G, faults, rules, scenarios, commands, API, recipes) |
 | [docs/USER_MANUAL.md](docs/USER_MANUAL.md) | Using the UI: adding a charger, sessions, faults, scenarios, message rules |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it is built: modules, data flow, extension points, REST/WebSocket API |
 | [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) | Deploying on Render and connecting a charger to your CSMS |

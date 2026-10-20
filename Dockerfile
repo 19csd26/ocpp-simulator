@@ -4,6 +4,8 @@ WORKDIR /app/ui
 COPY ui/package.json ui/package-lock.json ./
 RUN npm ci
 COPY ui/ ./
+# the web UI bundles the guide (docs/guide) so users can read it in the app
+COPY docs/guide /app/docs/guide
 RUN npm run build
 
 FROM python:3.13-slim

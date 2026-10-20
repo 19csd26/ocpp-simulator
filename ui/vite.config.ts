@@ -5,6 +5,7 @@ import { defineConfig } from 'vite'
 const backend = process.env.SIM_BACKEND ?? 'http://127.0.0.1:8100'
 export default defineConfig({
   plugins: [react()],
+  build: { chunkSizeWarningLimit: 700 }, // the guide (markdown + React Flow) loads on demand as its own chunk
   server: {
     proxy: {
       '/api': backend,

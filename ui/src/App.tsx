@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import AddStation from './components/AddStation'
 import Console, { STATE_TONE } from './components/Console'
 import Login from './components/Login'
@@ -6,11 +6,22 @@ import Signature from './components/Signature'
 import { ToastProvider } from './components/Toast'
 import { api } from './api'
 import { useSim } from './useSim'
+import { docsHash, parseDocsHash, type DocsRoute } from './docs/route'
+
+const Docs = lazy(() => import('./docs/Docs'))
 
 function Shell() {
   const sim = useSim()
   const [selected, setSelected] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [docs, setDocs] = useState<DocsRoute | null>(() => parseDocsHash(window.location.hash))
+  useEffect(() => {
+    const sync = () => setDocs(parseDocsHash(window.location.hash))
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+  const openDocs = (page = 'README', anchor?: string) => { window.location.hash = docsHash(page, anchor) }
+  const leaveDocs = () => { if (docs) history.pushState(null, '', window.location.pathname + window.location.search); setDocs(null) }
   const first = sim.order[0] ?? null
   const current = selected && sim.stations[selected] ? selected : first
   const st = current ? sim.stations[current] : null
@@ -22,11 +33,12 @@ function Shell() {
       <aside className="side">
         <div className="brand"><img className="brand-logo" src="/logo.svg" alt="Volkai logo" width={44} height={44} /><div><b>VOLKAI</b><small>OCPP 1.6 · 2.0.1</small></div></div>
         <div className="sim-link"><span className={`dot ${sim.connected ? 'on' : 'bad'}`} />{sim.connected ? 'Simulator backend connected' : 'Backend unreachable – retrying…'}</div>
-        <button onClick={() => { setAdding(true); setSelected(null) }}>＋ Add charger</button>
+        <button onClick={() => { setAdding(true); setSelected(null); leaveDocs() }}>＋ Add charger</button>
+        <button className={`st-item ${docs ? 'active' : ''}`} onClick={() => openDocs()}><span className="t">📖 Docs &amp; guide</span><small>Features, diagrams, examples</small></button>
         {sim.order.map((id) => {
           const s = sim.stations[id]
           return (
-            <button key={id} className={`st-item ${current === id && !adding ? 'active' : ''}`} onClick={() => { setSelected(id); setAdding(false) }}>
+            <button key={id} className={`st-item ${current === id && !adding && !docs ? 'active' : ''}`} onClick={() => { setSelected(id); setAdding(false); leaveDocs() }}>
               <span className="t"><span className={`dot ${s.state === 'online' ? 'on' : s.state === 'stopped' ? '' : STATE_TONE[s.state] === 'bad' ? 'bad' : 'warn'}`} />{s.name}</span>
               <small className="mono">{s.ocpp_id} · {s.state} · v{s.negotiated ?? (s.config.ocpp_version === 'auto' ? 'auto' : s.version)}</small>
               <small>{s.evses.reduce((n, e) => n + (e.tx ? 1 : 0), 0)} charging · {s.evses.length} EVSE{s.faults.active.length ? ` · ⚠ ${s.faults.active.length}` : ''}</small>
@@ -38,7 +50,7 @@ function Shell() {
         <Signature />
       </aside>
       <main className="main">
-        {!sim.meta ? <p className="muted">Loading…</p> : adding || !st ? (
+        {docs ? <Suspense fallback={<p className="muted">Loading the guide…</p>}><Docs route={docs} go={openDocs} /></Suspense> : !sim.meta ? <p className="muted">Loading…</p> : adding || !st ? (
           <>
             {!st && !adding && (
               <div className="welcome card">

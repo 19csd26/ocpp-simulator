@@ -1,6 +1,6 @@
 # Volkai: user manual
 
-> Looking for the full explanation of a feature, with flow and sequence diagrams and worked examples? See the **[feature guide](guide/README.md)**.
+> Looking for the full explanation of a feature, with flow and sequence diagrams and worked examples? See the **[feature guide](guide/README.md)**, which is also in the app: click **Docs & guide** in the sidebar (search, contents, and diagrams you can click, walk through and play).
 
 ## 1. Starting
 

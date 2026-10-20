@@ -17,7 +17,7 @@ Every feature follows the same shape:
 | **Sequence** | The OCPP messages between the charger and your CSMS, in order |
 | **Try it** | A full example: the clicks in the UI, the same thing through the API, and what you should see in the log and in your CSMS |
 
-The diagrams use [Mermaid](https://mermaid.js.org) and render on GitHub. In the sequence diagrams **CP** is the simulated charge point (Volkai) and
+**In the app:** click **Docs & guide** in the sidebar to read this guide inside Volkai, with search and a contents list. There the diagrams are interactive: click a step in a flow diagram to trace its path or *Walk through* it decision by decision, and *Play* a sequence diagram message by message. On GitHub the same diagrams use [Mermaid](https://mermaid.js.org) and render as pictures. In the sequence diagrams **CP** is the simulated charge point (Volkai) and
 **CSMS** is your central system.
 
 ## The pages

@@ -124,6 +124,8 @@ WebSocket `/ws` events: `init` (all stations + history), `state` (snapshot), `lo
 `api.ts` (types, fetch helper) · `useSim.ts` (WebSocket hook) · `App.tsx` (sidebar, station header, tabs) ·
 `components/` (`AddStation`, `Console`, `LogPanel`, `Toast`, `Confirm`) · `tabs/` (`Connectors`, `Faults`, `Scenarios`, `Messages`, `Device`, `State`).
 
+`docs/` is the in-app guide: it bundles `docs/guide/**/*.md` at build time (`pages.ts`), renders them with react-markdown (`Docs.tsx`) and turns every Mermaid block into an interactive React Flow diagram (`mermaid.ts` parses the flowchart, sequence and state subset the guide uses; `FlowDiagram.tsx` lays it out with dagre and adds trace / walk-through; `SeqDiagram.tsx` draws lifelines and plays the messages step by step). It is a lazy chunk, reached at `#/docs/<page>~<section>`. `npm test` (vitest) checks that every diagram in the guide parses.
+
 ## Extending
 
 - **New fault**: add an entry to `faults.CATALOG` and `_start_<kind>`/`_stop_<kind>` in `FaultsMixin`; the UI card is generated from the catalogue.
