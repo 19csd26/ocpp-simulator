@@ -16,6 +16,7 @@ There is no database and no CSMS integration. The UI remembers your last entries
 
 | Document | Read it for |
 |---|---|
+| [docs/guide/](docs/guide/README.md) | **Feature guide**: every feature explained with its definition, how it works, flow and sequence diagrams and a full worked example (sessions, metering, V2G, faults, rules, scenarios, commands, API, recipes) |
 | [docs/USER_MANUAL.md](docs/USER_MANUAL.md) | Using the UI: adding a charger, sessions, faults, scenarios, message rules |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it is built: modules, data flow, extension points, REST/WebSocket API |
 | [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) | Deploying on Render and connecting a charger to your CSMS |
@@ -121,7 +122,7 @@ Tests start the mock CSMS in-process on free ports; nothing external is needed.
 ## Caveats
 
 - Component names in fault-generated `NotifyEvent`s are best effort against the standardized component list and are **not verified against OCTT**.
-- Scenarios that start sessions use cards `CARD1` and `CARD2`; register them as accepted tokens in your CSMS. `unknown_token` expects the CSMS to refuse its token.
+- Scenarios that start sessions tap the cards set on the charger (default `CARD1` and `CARD2`; change them under **Edit charger**, *Cards used by tests*, to cards your CSMS accepts). `unknown_token` expects the CSMS to refuse its own made-up token.
 - The API has **no authentication unless `SIM_TOKEN` is set**. Without it, keep it on localhost (CORS is limited to localhost). The token is one shared secret, not per-user accounts, and there is no HTTPS of its own: use a tunnel or reverse proxy for TLS.
 - Stations live in memory; restarting the backend forgets them (the UI re-offers your last form values).
 

@@ -298,3 +298,14 @@ async def test_new_station_endpoints_over_http(api, csms):
     assert (await api.post(f"/api/stations/{sid}/reboot", json={"reason": "Nope"})).status_code == 422
     assert (await api.post(f"/api/stations/{sid}/reboot", json={"reason": "LocalReset"})).json()["reason"] == "LocalReset"
     await csms.wait_for("BootNotification", cp_id="API1", count=2, timeout=20)
+
+
+async def test_the_cards_can_be_set_and_changed_while_connected(api, csms):
+    created = await api.post("/api/stations", json=new_station(csms, card_id="MYCARD", card_id_2="MYCARD2"))
+    assert created.status_code == 201, created.text
+    sid = created.json()["id"]
+    assert created.json()["config"]["card_id"] == "MYCARD" and created.json()["config"]["card_id_2"] == "MYCARD2"
+    await wait_until(lambda: "API1" in csms.connections, message="connected")
+    patched = await api.patch(f"/api/stations/{sid}", json={"card_id": "OTHER"})  # a behaviour setting: allowed while connected
+    assert patched.status_code == 200 and patched.json()["config"]["card_id"] == "OTHER"
+    assert (await api.patch(f"/api/stations/{sid}", json={"card_id": ""})).status_code == 422

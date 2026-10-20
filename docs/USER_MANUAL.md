@@ -1,5 +1,7 @@
 # Volkai: user manual
 
+> Looking for the full explanation of a feature, with flow and sequence diagrams and worked examples? See the **[feature guide](guide/README.md)**.
+
 ## 1. Starting
 
 Start the backend (see the README) and open http://127.0.0.1:8100. In Docker: `docker compose up --build` and open http://localhost:8100; to reach a CSMS on your computer use `host.docker.internal` instead of `localhost` in its URL. The sidebar shows whether the simulator
@@ -71,6 +73,7 @@ Offline behaviour is the same: events queue and are delivered in order after rec
 
 | Feature | Where | What it does |
 |---|---|---|
+| **Cards used by tests** | Add / Edit charger | `card_id` (default `CARD1`) and `card_id_2` (default `CARD2`, used by EVSE 2). The scenarios, the sample messages and the Connectors tab tap these cards, so set them to cards your CSMS accepts. See [the guide](guide/02-sessions-and-cards.md#23-the-cards-used-by-tests). |
 | **Auto charge** | Add / Edit charger | The vehicle presents its own id (default `VID:FCA47A10DC70`, max 20 characters) half a second after it is plugged in, so no card is tapped. The CSMS must accept that id. |
 | **Smart plug** | Add / Edit charger (disconnected) | No cable detection: the connector stays Available until a remote start, goes straight to Charging, and is Available again after the stop. Needs a remote start (use *Simulate a command* below if you have no CSMS). |
 | **Finishing mode** | Add / Edit charger | OCPP 1.6: after a session the connector shows Finishing until the cable is pulled (off: Preparing). |
@@ -134,7 +137,7 @@ Paste JSON: a list of steps, each with `do` or `expect`, optional `timeout` (sec
 ```json
 [
   {"do": "plug_in", "ev": "large", "soc": 20},
-  {"do": "tap", "token": "CARD1"},
+  {"do": "tap", "token": "$card"},
   {"expect": "tx_state", "state": "Charging", "timeout": 20},
   {"do": "inject", "fault": "power_meter_failure", "params": {"mode": "frozen"}},
   {"expect": "message_sent", "action": "NotifyEvent", "timeout": 30},
@@ -205,7 +208,7 @@ the raw JSON. Search, filter by direction or message type, hide heartbeats, paus
 |---|---|
 | Stays offline, Reconnects rising | Wrong URL/ID, CSMS rejects the station, or password required |
 | Boot accepted but `Pending`/`Rejected` | CSMS policy; the station retries after the interval it returns |
-| Tap card says Invalid | Token not registered/accepted in your CSMS |
+| Tap card says Invalid | Token not registered/accepted in your CSMS; for scenarios set the charger's *Cards used by tests* |
 | Scenario step "timed out" | Expected behaviour did not occur; read the failed step's detail and the log |
 | "A scenario is already running" | Click **Stop** first |
 | UI shows backend disconnected | The simulator backend is not running on the expected port |

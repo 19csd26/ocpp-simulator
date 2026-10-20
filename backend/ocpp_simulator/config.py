@@ -61,6 +61,8 @@ class StationConfig(BaseModel):
     auto_connect: bool = False
     end_on_full: bool = True  # end the session (StoppedByEV) when the vehicle battery is full
     auto_charge: bool = False  # the vehicle presents its own id when plugged in (plug-and-charge / "auto charge"): no card needed
+    card_id: str = Field("CARD1", min_length=1, max_length=36)  # the card the Tap button and the scenarios use: put one your CSMS accepts
+    card_id_2: str = Field("CARD2", min_length=1, max_length=36)  # a second card, for scenarios with two sessions at once
     vehicle_id: str = "VID:FCA47A10DC70"  # the id that vehicle presents (max 20 characters, the OCPP 1.6 idTag limit)
     smart_plug: bool = False  # no cable detection: the connector stays Available until a remote start, then goes straight to Charging
     finishing_mode: bool = True  # OCPP 1.6: after a session the connector shows Finishing until unplugged (off: Preparing)

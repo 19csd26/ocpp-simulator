@@ -54,6 +54,8 @@ class NewStation(BaseModel):
     boot_on_reconnect: bool = True
     end_on_full: bool = True
     auto_charge: bool = False
+    card_id: str | None = Field(None, min_length=1, max_length=36)
+    card_id_2: str | None = Field(None, min_length=1, max_length=36)
     vehicle_id: str | None = Field(None, max_length=20)
     smart_plug: bool = False
     finishing_mode: bool = True
@@ -81,6 +83,8 @@ class StationPatch(BaseModel):
     meter_type: str | None = None
     meter_serial_number: str | None = None
     auto_charge: bool | None = None
+    card_id: str | None = Field(None, min_length=1, max_length=36)
+    card_id_2: str | None = Field(None, min_length=1, max_length=36)
     vehicle_id: str | None = Field(None, max_length=20)
     smart_plug: bool | None = None
     finishing_mode: bool | None = None

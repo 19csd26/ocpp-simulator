@@ -175,9 +175,15 @@ class Runner:
     async def a_unplug(self, s):
         await self.st.unplug(s.get("evse", 1))
 
+    def card(self, token: str | None) -> str:
+        """`$card` / `$card2` (or nothing) mean the cards set on the charger, so a scenario works with whatever your CSMS accepts."""
+        return {None: self.st.cfg.card_id, "$card": self.st.cfg.card_id, "$card2": self.st.cfg.card_id_2}.get(token, token)
+
     async def a_tap(self, s):
-        self.ctx["tap"] = await self.st.tap_card(s.get("evse", 1), s.get("token", "CARD1"), s.get("type", "ISO14443"))
-        return f"→ {self.ctx['tap'].get('status')}"
+        token = self.card(s.get("token"))
+        self.ctx["tap_card"] = token
+        self.ctx["tap"] = await self.st.tap_card(s.get("evse", 1), token, s.get("type", "ISO14443"))
+        return f"{token} → {self.ctx['tap'].get('status')}"
 
     async def a_stop(self, s):
         await self.st.stop_session(s.get("evse", 1), s.get("reason", "Local"), s.get("trigger", "StopAuthorized"))
@@ -279,7 +285,14 @@ class Runner:
             await asyncio.sleep(0.25)
 
     async def _expect(self, s: dict) -> str:
-        return await self._poll(lambda: self.EXPECTS[s["expect"]](self, s), s.get("timeout", DEFAULT_TIMEOUT), self._what(s))
+        try:
+            return await self._poll(lambda: self.EXPECTS[s["expect"]](self, s), s.get("timeout", DEFAULT_TIMEOUT), self._what(s))
+        except AssertionError as exc:
+            tap = self.ctx.get("tap") or {}
+            if tap.get("status") in ("Invalid", "Blocked", "Expired") and s.get("expect") not in ("tap_status",):
+                raise AssertionError(f"{exc}. The CSMS refused the card {self.ctx.get('tap_card')!r} ({tap['status']}): register it in your CSMS, "
+                                     "or set the cards this charger uses (Edit charger, 'Cards used by tests').") from None
+            raise
 
     @staticmethod
     def _what(s: dict) -> str:
@@ -342,7 +355,7 @@ class Runner:
 
 
 # ======================================================================================= catalogue
-def _session_start(evse=1, token="CARD1", ev="large", soc=20):
+def _session_start(evse=1, token="$card", ev="large", soc=20):
     return [{"do": "plug_in", "evse": evse, "ev": ev, "soc": soc}, {"do": "tap", "evse": evse, "token": token},
             {"expect": "tx_state", "evse": evse, "state": "Charging", "timeout": 20, "label": "Charging starts"},
             {"expect": "energy_gt", "evse": evse, "wh": 5, "timeout": 20, "label": "Energy is flowing"}]
@@ -395,14 +408,14 @@ def build_catalog() -> dict[str, dict]:
         [{"do": "plug_in"}, {"do": "tap", "token": "UNKNOWN-TOKEN-0000"}, {"expect": "tap_status", "status": "Invalid", "label": "CSMS answers Invalid / Blocked"},
          {"expect": "tx_state", "state": "none"}, {"do": "unplug"}])
     add("authorize_then_plug", "Authorize first, plug in later", "Basics", "The driver taps a card before connecting the cable; the session starts when the vehicle is connected.",
-        [{"do": "tap", "token": "CARD1"}, {"do": "plug_in", "ev": "large"}, {"expect": "tx_state", "state": "Charging", "timeout": 20}, {"do": "stop"}, {"do": "unplug"}])
+        [{"do": "tap"}, {"do": "plug_in", "ev": "large"}, {"expect": "tx_state", "state": "Charging", "timeout": 20}, {"do": "stop"}, {"do": "unplug"}])
     add("remote_start_from_csms", "Remote start / stop from your CSMS", "Basics",
         "Interactive: plug a vehicle in, then send RequestStartTransaction (and later RequestStopTransaction) from your CSMS dashboard or app.",
         [{"do": "plug_in", "ev": "large"}, {"do": "wait_message", "dir": "in", "action": "RequestStartTransaction", "timeout": 180, "label": "WAIT: start the session from your CSMS now", "v16": {"action": "RemoteStartTransaction"}},
          {"expect": "tx_state", "state": "Charging", "timeout": 30}, {"do": "wait_message", "dir": "in", "action": "RequestStopTransaction", "timeout": 180, "label": "WAIT: stop it from your CSMS", "v16": {"action": "RemoteStopTransaction"}},
          {"expect": "tx_state", "state": "none", "timeout": 30}, {"do": "unplug"}])
     add("two_sessions", "Two connectors charging at once", "Basics", "Two EVSEs run independent sessions at the same time (needs a station with at least 2 EVSEs).",
-        [*_session_start(1, "CARD1"), *_session_start(2, "CARD2"), {"do": "stop", "evse": 1}, {"expect": "tx_state", "evse": 2, "state": "Charging"},
+        [*_session_start(1, "$card"), *_session_start(2, "$card2"), {"do": "stop", "evse": 1}, {"expect": "tx_state", "evse": 2, "state": "Charging"},
          {"do": "stop", "evse": 2}, {"do": "unplug", "evse": 1}, {"do": "unplug", "evse": 2}])
     add("battery_full", "Vehicle becomes full", "Basics", "A nearly full small battery finishes: SuspendedEV then Ended (StoppedByEV).",
         [{"do": "plug_in", "ev": "scooter", "soc": 99}, {"do": "tap"}, _ended("StoppedByEV"), {"do": "unplug"}])

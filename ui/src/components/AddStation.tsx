@@ -34,6 +34,8 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
   const [scale, setScale] = useState(edit?.time_scale ?? 1)
   const [bootOnReconnect, setBootOnReconnect] = useState(cfg?.boot_on_reconnect ?? true)
   const [autoCharge, setAutoCharge] = useState(cfg?.auto_charge ?? false)
+  const [cardId, setCardId] = useState(cfg?.card_id ?? 'CARD1')
+  const [cardId2, setCardId2] = useState(cfg?.card_id_2 ?? 'CARD2')
   const [vehicleId, setVehicleId] = useState(cfg?.vehicle_id ?? 'VID:FCA47A10DC70')
   const [smartPlug, setSmartPlug] = useState(cfg?.smart_plug ?? false)
   const [finishing, setFinishing] = useState(cfg?.finishing_mode ?? true)
@@ -75,7 +77,7 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
     setError('')
     try {
       if (edit) {
-        const body: Record<string, unknown> = { name: name.trim() || `Simulator ${chargerId}`, time_scale: scale, boot_on_reconnect: bootOnReconnect, end_on_full: endOnFull, auto_charge: autoCharge, vehicle_id: vehicleId, finishing_mode: finishing }
+        const body: Record<string, unknown> = { name: name.trim() || `Simulator ${chargerId}`, time_scale: scale, boot_on_reconnect: bootOnReconnect, end_on_full: endOnFull, auto_charge: autoCharge, card_id: cardId.trim() || 'CARD1', card_id_2: cardId2.trim() || 'CARD2', vehicle_id: vehicleId, finishing_mode: finishing }
         if (!locked) {
           Object.assign(body, { ocpp_id: chargerId.trim(), csms_url: url.trim(), security_profile: profile, ocpp_version: version, verify_tls: verify, smart_plug: smartPlug, ...identity() })
           if (password || dropPassword) body.password = dropPassword ? '' : password
@@ -89,7 +91,7 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
       }
       const snap = await api<Snapshot>('/api/stations', {
         method: 'POST',
-        body: { name: name.trim() || `Simulator ${chargerId}`, ocpp_id: chargerId.trim(), csms_url: url.trim(), password: password || null, security_profile: profile, ocpp_version: version, verify_tls: verify, auto_charge: autoCharge, vehicle_id: vehicleId, smart_plug: smartPlug, finishing_mode: finishing, ...identity(), preset, evses: custom, time_scale: scale, connect },
+        body: { name: name.trim() || `Simulator ${chargerId}`, ocpp_id: chargerId.trim(), csms_url: url.trim(), password: password || null, security_profile: profile, ocpp_version: version, verify_tls: verify, auto_charge: autoCharge, card_id: cardId.trim() || 'CARD1', card_id_2: cardId2.trim() || 'CARD2', vehicle_id: vehicleId, smart_plug: smartPlug, finishing_mode: finishing, ...identity(), preset, evses: custom, time_scale: scale, connect },
       })
       const entry: Saved = { name: name.trim(), ocpp_id: chargerId.trim(), csms_url: url.trim(), preset, security_profile: profile, ocpp_version: version }
       localStorage.setItem(KEY, JSON.stringify([entry, ...saved.filter((s) => !(s.ocpp_id === entry.ocpp_id && s.csms_url === entry.csms_url))].slice(0, 8)))
@@ -189,6 +191,15 @@ export default function AddStation({ meta, onAdded, onCancel, edit }: { meta: Me
         )}
       </div>
 
+      <div className="cols">
+        <label>Card used by the Tap button and the tests
+          <input value={cardId} maxLength={36} onChange={(e) => setCardId(e.target.value)} placeholder="CARD1" spellCheck={false} />
+        </label>
+        <label>Second card (tests with two sessions)
+          <input value={cardId2} maxLength={36} onChange={(e) => setCardId2(e.target.value)} placeholder="CARD2" spellCheck={false} />
+        </label>
+      </div>
+      <small className="muted" style={{ marginTop: -4 }}>Use cards your CSMS accepts: a card it does not know is refused (Invalid) and no session starts. OCPP 1.6 cuts a card id to 20 characters.</small>
       <div className="stack" style={{ gap: 6 }}>
         <label className="inline"><input type="checkbox" checked={autoCharge} onChange={(e) => setAutoCharge(e.target.checked)} /> Auto charge: the vehicle identifies itself when plugged in, no card needed</label>
         {autoCharge && <label style={{ maxWidth: 360 }}>Vehicle id (idTag, max 20 characters)<input value={vehicleId} maxLength={20} onChange={(e) => setVehicleId(e.target.value)} /></label>}

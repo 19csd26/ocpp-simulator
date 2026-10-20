@@ -493,7 +493,7 @@ class Station(ChargingMixin, CommandsMixin, FaultsMixin, V16Mixin, FeaturesMixin
             "heartbeat_interval": self.model.get_int("OCPPCommCtrlr", "HeartbeatInterval", 30), "time_scale": self.cfg.time_scale,
             "config": {"ocpp_version": self.cfg.ocpp_version, "security_profile": self.cfg.security_profile, "verify_tls": self.cfg.verify_tls, "has_password": bool(self.cfg.password),
                        "boot_on_reconnect": self.cfg.boot_on_reconnect, "end_on_full": self.cfg.end_on_full,
-                       "auto_charge": self.cfg.auto_charge, "vehicle_id": self.cfg.vehicle_id, "smart_plug": self.cfg.smart_plug, "finishing_mode": self.cfg.finishing_mode,
+                       "auto_charge": self.cfg.auto_charge, "card_id": self.cfg.card_id, "card_id_2": self.cfg.card_id_2, "vehicle_id": self.cfg.vehicle_id, "smart_plug": self.cfg.smart_plug, "finishing_mode": self.cfg.finishing_mode,
                        "vendor": self.cfg.vendor, "model": self.cfg.model, "serial_number": self.cfg.serial_number, "firmware_version": self.cfg.firmware_version,
                        "iccid": self.cfg.iccid, "imsi": self.cfg.imsi, "charge_box_serial_number": self.cfg.charge_box_serial_number,
                        "meter_type": self.cfg.meter_type, "meter_serial_number": self.cfg.meter_serial_number,

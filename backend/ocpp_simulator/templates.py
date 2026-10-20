@@ -21,7 +21,7 @@ def message_template(action: str, st) -> dict:
              "component": {"name": "EVSE", "evse": {"id": evse}}, "variable": {"name": "Problem"}, "techCode": "SampleFault"}
     ocsp = {"hashAlgorithm": "SHA256", "issuerNameHash": "0a" * 32, "issuerKeyHash": "0b" * 32, "serialNumber": "01", "responderURL": "http://ocsp.example.com"}
     table = {
-        "Authorize": {"idToken": {"idToken": "CARD1", "type": "ISO14443"}},
+        "Authorize": {"idToken": {"idToken": st.cfg.card_id, "type": "ISO14443"}},
         "BootNotification": {"reason": "Triggered", "chargingStation": {"vendorName": st.cfg.vendor, "model": st.cfg.model, "serialNumber": st.cfg.serial_number, "firmwareVersion": st.cfg.firmware_version}},
         "ClearedChargingLimit": {"chargingLimitSource": "EMS", "evseId": evse},
         "DataTransfer": {"vendorId": "com.simulator", "messageId": "hello", "data": {"greeting": "hi"}},
@@ -107,7 +107,7 @@ def message_template16(action: str, st) -> dict:
     now = st.ts()
     tx_ids = [n for n in st.tx16.values()]
     table = {
-        "Authorize": {"idTag": "CARD1"},
+        "Authorize": {"idTag": st.cfg.card_id[:20]},
         "BootNotification": {"chargePointVendor": st.cfg.vendor, "chargePointModel": st.cfg.model, "chargePointSerialNumber": st.cfg.serial_number,
                              "firmwareVersion": st.cfg.firmware_version},
         "DataTransfer": {"vendorId": "com.simulator", "messageId": "hello", "data": "hi"},
@@ -117,7 +117,7 @@ def message_template16(action: str, st) -> dict:
         "MeterValues": {"connectorId": 1, **({"transactionId": tx_ids[0]} if tx_ids else {}),
                         "meterValue": [{"timestamp": now, "sampledValue": [{"value": "1234.5", "context": "Sample.Periodic", "measurand": "Energy.Active.Import.Register",
                                                                           "unit": "Wh"}]}]},
-        "StartTransaction": {"connectorId": 1, "idTag": "CARD1", "meterStart": int(st.evses[0].register_wh), "timestamp": now},
+        "StartTransaction": {"connectorId": 1, "idTag": st.cfg.card_id[:20], "meterStart": int(st.evses[0].register_wh), "timestamp": now},
         "StatusNotification": {"connectorId": 1, "errorCode": "NoError", "status": "Available", "timestamp": now},
         "StopTransaction": {"transactionId": tx_ids[0] if tx_ids else 1, "meterStop": int(st.evses[0].register_wh), "timestamp": now, "reason": "Local"},
     }
@@ -134,10 +134,10 @@ def command_template16(action: str, st) -> dict:
         "ChangeConfiguration": {"key": "HeartbeatInterval", "value": "30"}, "ClearCache": {}, "ClearChargingProfile": {"id": 1},
         "DataTransfer": {"vendorId": "com.simulator.echo", "data": "hi"}, "GetCompositeSchedule": {"connectorId": 1, "duration": 600},
         "GetConfiguration": {}, "GetDiagnostics": {"location": "ftp://example.com/logs"}, "GetLocalListVersion": {},
-        "RemoteStartTransaction": {"idTag": "CARD1", "connectorId": 1}, "RemoteStopTransaction": {"transactionId": 1},
-        "ReserveNow": {"connectorId": 1, "expiryDate": (st.now() + timedelta(hours=1)).isoformat(), "idTag": "CARD1", "reservationId": 1},
+        "RemoteStartTransaction": {"idTag": st.cfg.card_id[:20], "connectorId": 1}, "RemoteStopTransaction": {"transactionId": 1},
+        "ReserveNow": {"connectorId": 1, "expiryDate": (st.now() + timedelta(hours=1)).isoformat(), "idTag": st.cfg.card_id[:20], "reservationId": 1},
         "Reset": {"type": "Soft"},
-        "SendLocalList": {"listVersion": 1, "updateType": "Full", "localAuthorizationList": [{"idTag": "CARD1", "idTagInfo": {"status": "Accepted"}}]},
+        "SendLocalList": {"listVersion": 1, "updateType": "Full", "localAuthorizationList": [{"idTag": st.cfg.card_id[:20], "idTagInfo": {"status": "Accepted"}}]},
         "SetChargingProfile": {"connectorId": 1, "csChargingProfiles": profile}, "TriggerMessage": {"requestedMessage": "StatusNotification"},
         "UnlockConnector": {"connectorId": 1}, "UpdateFirmware": {"location": "http://example.com/firmware.bin", "retrieveDate": now},
     }

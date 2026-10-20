@@ -325,3 +325,51 @@ async def test_default_behaviour_of_1_6_and_2_0_1_is_unchanged(make, csms, versi
     await st.stop_session(1)
     if version == "1.6":
         await wait_until(lambda: (1, "Finishing") in statuses(csms), message="Finishing after the session")
+
+
+# --------------------------------------------------------------- the cards a charger uses (your CSMS's own cards)
+@pytest.mark.parametrize("version", VERSIONS)
+async def test_scenarios_use_the_cards_set_on_the_charger(make, version):
+    """A CSMS that only knows MYCARD / MYCARD2 (and refuses the old defaults CARD1 / CARD2) still passes the session scenarios."""
+    strict = MockCsms(allowed_tokens={"MYCARD", "MYCARD2"})
+    await strict.start()
+    try:
+        st = await make(version, server=strict, card_id="MYCARD", card_id_2="MYCARD2")
+        for sid in ("rfid_session", "two_sessions"):
+            run = await run_scenario(st, sid)
+            assert run.status == "passed", (sid, failures(run))
+        sent = [m["id_tag"] if version == "1.6" else m["id_token"]["id_token"] for m in strict.messages("Authorize", "FT1")]
+        assert set(sent) == {"MYCARD", "MYCARD2"}  # never the hard-coded CARD1 / CARD2
+    finally:
+        await strict.stop()
+
+
+async def test_a_refused_card_is_named_in_the_scenario_failure(make):
+    strict = MockCsms(allowed_tokens={"ONLYTHIS"})
+    await strict.start()
+    try:
+        st = await make("2.0.1", server=strict)  # default cards CARD1 / CARD2: the CSMS does not know them
+        run = await run_scenario(st, "rfid_session")
+        assert run.status == "failed"
+        message = " ".join(d for _, d in failures(run))
+        assert "refused the card 'CARD1'" in message and "Invalid" in message and "Cards used by tests" in message
+    finally:
+        await strict.stop()
+
+
+async def test_the_unknown_token_scenario_still_passes_and_does_not_use_the_charger_cards(make):
+    strict = MockCsms(allowed_tokens={"MYCARD"})
+    await strict.start()
+    try:
+        st = await make("1.6", server=strict, card_id="MYCARD")
+        run = await run_scenario(st, "unknown_token")
+        assert run.status == "passed", failures(run)
+    finally:
+        await strict.stop()
+
+
+async def test_templates_carry_the_configured_card(make, csms):
+    st = await make("2.0.1", card_id="TPL-CARD")
+    assert __import__("ocpp_simulator.templates", fromlist=["x"]).message_template("Authorize", st)["idToken"]["idToken"] == "TPL-CARD"
+    st16 = await make("1.6", ocpp_id="FT16", card_id="TPL-CARD-16-LONGER-THAN-TWENTY")
+    assert __import__("ocpp_simulator.templates", fromlist=["x"]).message_template16("Authorize", st16)["idTag"] == "TPL-CARD-16-LONGER-T"[:20]

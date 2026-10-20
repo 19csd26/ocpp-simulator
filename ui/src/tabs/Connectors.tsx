@@ -5,13 +5,13 @@ import { useToast } from '../components/Toast'
 const STATE_CHIP: Record<string, string> = { Charging: 'on', EVConnected: 'info', SuspendedEV: 'warn', SuspendedEVSE: 'warn', Idle: '' }
 const fmt = (s: number) => `${Math.floor(s / 3600) ? Math.floor(s / 3600) + ':' : ''}${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 
-function EvseCard({ id, e, meta, faults, goFaults, version }: { id: string; e: EvseState; meta: Meta; faults: Snapshot['faults']['active']; goFaults: () => void; version: string }) {
+function EvseCard({ id, e, meta, faults, goFaults, version, defaultCard }: { id: string; e: EvseState; meta: Meta; faults: Snapshot['faults']['active']; goFaults: () => void; version: string; defaultCard: string }) {
   const toast = useToast()
   const [ev, setEv] = useState('mid')
   const [soc, setSoc] = useState(20)
   const [target, setTarget] = useState(100)
   const [connector, setConnector] = useState(e.connectors[0].id)
-  const [token, setToken] = useState('CARD1')
+  const [token, setToken] = useState(defaultCard)
   const [reason, setReason] = useState('Local')
   const [tokenType, setTokenType] = useState('ISO14443')
   const [v2gKw, setV2gKw] = useState(5)
@@ -172,7 +172,7 @@ export default function Connectors({ st, meta, goFaults }: { st: Snapshot; meta:
         <button className="ghost small" onClick={() => void reboot()} disabled={!st.want_connected}>↻ Reboot{st.version === '1.6' ? '' : ' with this reason'}</button>
         <small className="muted">Every connector is reported to the CSMS as soon as the boot is accepted.</small>
       </div>
-      <div className="evse-grid">{st.evses.map((e) => <EvseCard key={e.id} id={st.id} e={e} meta={meta} faults={st.faults.active} goFaults={goFaults} version={st.version} />)}</div>
+      <div className="evse-grid">{st.evses.map((e) => <EvseCard key={e.id} id={st.id} e={e} meta={meta} faults={st.faults.active} goFaults={goFaults} version={st.version} defaultCard={st.evses.length > 1 && e.id === 2 ? st.config.card_id_2 : st.config.card_id} />)}</div>
     </div>
   )
 }
